@@ -21,7 +21,12 @@ namespace InventoryManagementAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<InvoiceListResponse>>> GetInvoices([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] InvoiceType? type = null, [FromQuery] InvoiceStatus? status = null)
+        public async Task<ActionResult<ApiResponse<InvoiceListResponse>>> GetInvoices(
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 10,
+    [FromQuery] InvoiceType? type = null,
+    [FromQuery] InvoiceStatus? status = null,
+    [FromQuery] string? searchTerm = null)
         {
             try
             {
@@ -36,6 +41,13 @@ namespace InventoryManagementAPI.Controllers
                 if (status.HasValue)
                 {
                     query = query.Where(i => i.Status == status.Value);
+                }
+
+                // Apply search filter
+                if (!string.IsNullOrEmpty(searchTerm))
+                {
+                    query = query.Where(i => i.InvoiceNumber.Contains(searchTerm) ||
+                                           i.CustomerName.Contains(searchTerm));
                 }
 
                 // Get total count

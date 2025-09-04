@@ -29,4 +29,5 @@ namespace InventoryManagementAPI.Models
         // Navigation properties
         public ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
     }
+
 }

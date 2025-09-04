@@ -157,6 +157,7 @@ namespace InventoryManagementAPI.Controllers
                 profile.BankAccount = request.BankAccount;
                 profile.Website = request.Website;
                 profile.InvoicePrefix = request.InvoicePrefix;
+                profile.OfferPrefix = request.OfferPrefix;
                 profile.DefaultTaxRate = request.DefaultTaxRate;
 
                 await _context.SaveChangesAsync();

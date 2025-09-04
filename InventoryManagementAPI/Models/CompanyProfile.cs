@@ -32,8 +32,10 @@ namespace InventoryManagementAPI.Models
         public string? LogoUrl { get; set; }
 
         // Invoice settings
-        public string InvoicePrefix { get; set; } = "INV";
+        public string InvoicePrefix { get; set; } = "Rac";
+        public string OfferPrefix { get; set; } = "Pon";
         public int LastInvoiceNumber { get; set; } = 0;
+        public int LastOfferNumber { get; set; } = 0;
 
         [Column(TypeName = "decimal(5,2)")]
         public decimal DefaultTaxRate { get; set; } = 25.00m; // 25% PDV for Croatia
