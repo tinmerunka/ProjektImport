@@ -22,6 +22,12 @@ namespace InventoryManagementAPI.DTOs
         [Required]
         [StringLength(50, MinimumLength = 1)]
         public string SKU { get; set; } = string.Empty;
+
+        [Range(0, 100)]
+        public decimal TaxRate { get; set; } = 25.00m;
+
+        [StringLength(20)]
+        public string Unit { get; set; } = "kom";
     }
 
     public class UpdateProductRequest
@@ -44,6 +50,12 @@ namespace InventoryManagementAPI.DTOs
         [Required]
         [StringLength(50, MinimumLength = 1)]
         public string SKU { get; set; } = string.Empty;
+
+        [Range(0, 100)]
+        public decimal TaxRate { get; set; } = 25.00m;
+
+        [StringLength(20)]
+        public string Unit { get; set; } = "kom";
     }
 
     public class ProductResponse
@@ -54,6 +66,8 @@ namespace InventoryManagementAPI.DTOs
         public decimal Price { get; set; }
         public int Quantity { get; set; }
         public string SKU { get; set; } = string.Empty;
+        public decimal TaxRate { get; set; }
+        public string Unit { get; set; } = string.Empty;
     }
 
     public class ProductListResponse
