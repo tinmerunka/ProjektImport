@@ -2,6 +2,7 @@ using InventoryManagementAPI.Data;
 using InventoryManagementAPI.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
@@ -95,6 +96,13 @@ app.UseCors("AllowReactApp");
 // Enable Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.WebRootPath, "images")),
+    RequestPath = "/images"
+});
 
 app.MapControllers();
 

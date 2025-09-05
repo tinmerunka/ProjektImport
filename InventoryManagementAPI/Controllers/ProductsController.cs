@@ -73,7 +73,8 @@ namespace InventoryManagementAPI.Controllers
                         Description = p.Description,
                         Price = p.Price,
                         Quantity = p.Quantity,
-                        SKU = p.SKU
+                        SKU = p.SKU,
+                        ImageUrl = p.ImageUrl
                     })
                     .ToListAsync();
 
@@ -126,7 +127,8 @@ namespace InventoryManagementAPI.Controllers
                     Description = product.Description,
                     Price = product.Price,
                     Quantity = product.Quantity,
-                    SKU = product.SKU
+                    SKU = product.SKU,
+                    ImageUrl = product.ImageUrl
                 };
 
                 return Ok(new ApiResponse<ProductResponse>
@@ -162,13 +164,18 @@ namespace InventoryManagementAPI.Controllers
                     });
                 }
 
+                Console.WriteLine($"Creating product: {request.Name}");
+                Console.WriteLine($"ImageUrl received: {request.ImageUrl}");
+
+
                 var product = new Product
                 {
                     Name = request.Name,
                     Description = request.Description,
                     Price = request.Price,
                     Quantity = request.Quantity,
-                    SKU = request.SKU
+                    SKU = request.SKU,
+                    ImageUrl = request.ImageUrl
                 };
 
                 _context.Products.Add(product);
@@ -181,7 +188,8 @@ namespace InventoryManagementAPI.Controllers
                     Description = product.Description,
                     Price = product.Price,
                     Quantity = product.Quantity,
-                    SKU = product.SKU
+                    SKU = product.SKU,
+                    ImageUrl = product.ImageUrl
                 };
 
                 return CreatedAtAction(nameof(GetProduct), new { id = product.Id },
@@ -234,6 +242,7 @@ namespace InventoryManagementAPI.Controllers
                 product.Price = request.Price;
                 product.Quantity = request.Quantity;
                 product.SKU = request.SKU;
+                product.ImageUrl = request.ImageUrl;
 
                 await _context.SaveChangesAsync();
 
@@ -244,7 +253,8 @@ namespace InventoryManagementAPI.Controllers
                     Description = product.Description,
                     Price = product.Price,
                     Quantity = product.Quantity,
-                    SKU = product.SKU
+                    SKU = product.SKU,
+                    ImageUrl = product.ImageUrl
                 };
 
                 return Ok(new ApiResponse<ProductResponse>

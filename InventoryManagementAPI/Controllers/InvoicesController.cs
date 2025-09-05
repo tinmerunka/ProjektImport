@@ -201,7 +201,14 @@ namespace InventoryManagementAPI.Controllers
 
                 // Generate invoice number
                 companyProfile.LastInvoiceNumber++;
-                var invoiceNumber = $"{companyProfile.InvoicePrefix}-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                var invoiceNumber = string.Empty;
+                if (request.Type == InvoiceType.Offer)
+                {
+                    invoiceNumber = $"P-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                }
+                else {
+                    invoiceNumber = $"R-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                }
 
                 // Set due date if not provided
                 var dueDate = request.DueDate ?? DateTime.UtcNow.AddDays(30);
@@ -337,6 +344,203 @@ namespace InventoryManagementAPI.Controllers
             }
         }
 
+        [HttpPut("{id}")]
+        public async Task<ActionResult<ApiResponse<InvoiceResponse>>> UpdateInvoice(int id, CreateInvoiceRequest request)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                var invoice = await _context.Invoices
+                    .Include(i => i.Items)
+                    .FirstOrDefaultAsync(i => i.Id == id);
+
+                if (invoice == null)
+                {
+                    return NotFound(new ApiResponse<InvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "Račun nije pronađen"
+                    });
+                }
+
+                // Only allow updates to draft invoices
+                if (invoice.Status != InvoiceStatus.Draft)
+                {
+                    return BadRequest(new ApiResponse<InvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "Samo računi koji su 'draft' se mogu urediti"
+                    });
+                }
+
+                // Update invoice type
+                invoice.Type = request.Type;
+
+                // Update customer information if customer changed
+                if (request.CustomerId != invoice.CustomerId)
+                {
+                    var customer = await _context.Customers.FindAsync(request.CustomerId);
+                    if (customer == null)
+                    {
+                        return BadRequest(new ApiResponse<InvoiceResponse>
+                        {
+                            Success = false,
+                            Message = "Customer not found"
+                        });
+                    }
+
+                    invoice.CustomerId = customer.Id;
+                    invoice.CustomerName = customer.Name;
+                    invoice.CustomerAddress = customer.Address;
+                    invoice.CustomerOib = customer.Oib;
+                }
+
+                // Update due date and notes
+                invoice.DueDate = request.DueDate ?? invoice.DueDate;
+                invoice.Notes = request.Notes;
+
+                // Update company information from current company profile
+                var companyProfile = await _context.CompanyProfiles.FirstOrDefaultAsync();
+                if (companyProfile != null)
+                {
+                    invoice.CompanyName = companyProfile.CompanyName;
+                    invoice.CompanyAddress = companyProfile.Address;
+                    invoice.CompanyOib = companyProfile.Oib;
+                }
+
+                // Update invoice number if type changed
+                if (invoice.Type != request.Type)
+                {
+                    // Generate new invoice number based on type
+                    companyProfile.LastInvoiceNumber++;
+                    if (request.Type == InvoiceType.Offer)
+                    {
+                        invoice.InvoiceNumber = $"P-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                    }
+                    else
+                    {
+                        invoice.InvoiceNumber = $"R-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                    }
+                }
+
+                // Remove existing invoice items
+                _context.InvoiceItems.RemoveRange(invoice.Items);
+
+                // Add new invoice items
+                decimal subTotal = 0;
+                decimal totalTaxAmount = 0;
+
+                foreach (var itemRequest in request.Items)
+                {
+                    var product = await _context.Products.FindAsync(itemRequest.ProductId);
+                    if (product == null)
+                    {
+                        return BadRequest(new ApiResponse<InvoiceResponse>
+                        {
+                            Success = false,
+                            Message = $"Product with ID {itemRequest.ProductId} not found"
+                        });
+                    }
+
+                    var unitPrice = itemRequest.OverridePrice ?? product.Price;
+                    var taxRate = itemRequest.OverrideTaxRate ?? product.TaxRate;
+                    var lineTotal = unitPrice * itemRequest.Quantity;
+                    var lineTaxAmount = lineTotal * (taxRate / 100);
+
+                    var invoiceItem = new InvoiceItem
+                    {
+                        InvoiceId = invoice.Id,
+                        ProductId = product.Id,
+                        ProductName = product.Name,
+                        ProductSku = product.SKU,
+                        ProductDescription = product.Description,
+                        UnitPrice = unitPrice,
+                        Quantity = itemRequest.Quantity,
+                        TaxRate = taxRate,
+                        LineTotal = lineTotal,
+                        LineTaxAmount = lineTaxAmount,
+                        Unit = product.Unit
+                    };
+
+                    _context.InvoiceItems.Add(invoiceItem);
+
+                    subTotal += lineTotal;
+                    totalTaxAmount += lineTaxAmount;
+                }
+
+                // Update financial totals
+                invoice.SubTotal = subTotal;
+                invoice.TaxAmount = totalTaxAmount;
+                invoice.TotalAmount = subTotal + totalTaxAmount;
+                invoice.TaxRate = subTotal > 0 ? (totalTaxAmount / subTotal) * 100 : 0;
+
+                invoice.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                // Return updated invoice with all details
+                var updatedInvoice = await _context.Invoices
+                    .Include(i => i.Items)
+                    .FirstOrDefaultAsync(i => i.Id == invoice.Id);
+
+                var response = new InvoiceResponse
+                {
+                    Id = updatedInvoice.Id,
+                    InvoiceNumber = updatedInvoice.InvoiceNumber,
+                    Type = updatedInvoice.Type,
+                    Status = updatedInvoice.Status,
+                    IssueDate = updatedInvoice.IssueDate,
+                    DueDate = updatedInvoice.DueDate,
+                    CustomerId = updatedInvoice.CustomerId,
+                    CustomerName = updatedInvoice.CustomerName,
+                    CustomerAddress = updatedInvoice.CustomerAddress,
+                    CustomerOib = updatedInvoice.CustomerOib,
+                    CompanyName = updatedInvoice.CompanyName,
+                    CompanyAddress = updatedInvoice.CompanyAddress,
+                    CompanyOib = updatedInvoice.CompanyOib,
+                    SubTotal = updatedInvoice.SubTotal,
+                    TaxAmount = updatedInvoice.TaxAmount,
+                    TotalAmount = updatedInvoice.TotalAmount,
+                    TaxRate = updatedInvoice.TaxRate,
+                    Notes = updatedInvoice.Notes,
+                    CreatedAt = updatedInvoice.CreatedAt,
+                    Items = updatedInvoice.Items.Select(item => new InvoiceItemResponse
+                    {
+                        Id = item.Id,
+                        ProductId = item.ProductId,
+                        ProductName = item.ProductName,
+                        ProductSku = item.ProductSku,
+                        ProductDescription = item.ProductDescription,
+                        UnitPrice = item.UnitPrice,
+                        Quantity = item.Quantity,
+                        TaxRate = item.TaxRate,
+                        LineTotal = item.LineTotal,
+                        LineTaxAmount = item.LineTaxAmount,
+                        Unit = item.Unit
+                    }).ToList()
+                };
+
+                return Ok(new ApiResponse<InvoiceResponse>
+                {
+                    Success = true,
+                    Message = "Račun uspješno ažuriran",
+                    Data = response
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new ApiResponse<InvoiceResponse>
+                {
+                    Success = false,
+                    Message = "Došlo je do greške prilikom ažuriranja računa"
+                });
+            }
+        }
+
+
         [HttpPut("{id}/status")]
         public async Task<ActionResult<ApiResponse<object>>> UpdateInvoiceStatus(int id, UpdateInvoiceStatusRequest request)
         {
@@ -393,12 +597,12 @@ namespace InventoryManagementAPI.Controllers
                 }
 
                 // Only allow deletion of draft invoices
-                if (invoice.Status != InvoiceStatus.Draft)
+                if (invoice.Status != InvoiceStatus.Draft )
                 {
                     return BadRequest(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = "Only draft invoices can be deleted"
+                        Message = "Poslani ili plaćeni računi se ne mogu obrisati"
                     });
                 }
 
@@ -408,7 +612,7 @@ namespace InventoryManagementAPI.Controllers
                 return Ok(new ApiResponse<object>
                 {
                     Success = true,
-                    Message = "Invoice deleted successfully"
+                    Message = "Račun uspješno obrisan"
                 });
             }
             catch (Exception ex)

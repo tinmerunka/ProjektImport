@@ -30,6 +30,7 @@ namespace InventoryManagementAPI.Models
         public string Unit { get; set; } = "kom"; // kom, kg, m², lit, etc.
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public string? ImageUrl { get; set; } 
 
         // Navigation properties
         public ICollection<InvoiceItem> InvoiceItems { get; set; } = new List<InvoiceItem>();

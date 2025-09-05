@@ -28,6 +28,8 @@ namespace InventoryManagementAPI.DTOs
 
         [StringLength(20)]
         public string Unit { get; set; } = "kom";
+        public string? ImageUrl { get; set; }
+
     }
 
     public class UpdateProductRequest
@@ -56,6 +58,8 @@ namespace InventoryManagementAPI.DTOs
 
         [StringLength(20)]
         public string Unit { get; set; } = "kom";
+
+        public string? ImageUrl { get; set; }
     }
 
     public class ProductResponse
@@ -68,6 +72,7 @@ namespace InventoryManagementAPI.DTOs
         public string SKU { get; set; } = string.Empty;
         public decimal TaxRate { get; set; }
         public string Unit { get; set; } = string.Empty;
+        public string? ImageUrl { get; set; } = string.Empty;
     }
 
     public class ProductListResponse
