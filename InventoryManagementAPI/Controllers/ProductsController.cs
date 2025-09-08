@@ -74,7 +74,9 @@ namespace InventoryManagementAPI.Controllers
                         Price = p.Price,
                         Quantity = p.Quantity,
                         SKU = p.SKU,
-                        ImageUrl = p.ImageUrl
+                        ImageUrl = p.ImageUrl,
+                        TaxRate = p.TaxRate,
+                        Unit = p.Unit
                     })
                     .ToListAsync();
 
@@ -128,7 +130,9 @@ namespace InventoryManagementAPI.Controllers
                     Price = product.Price,
                     Quantity = product.Quantity,
                     SKU = product.SKU,
-                    ImageUrl = product.ImageUrl
+                    ImageUrl = product.ImageUrl,
+                    TaxRate = product.TaxRate,
+                    Unit = product.Unit
                 };
 
                 return Ok(new ApiResponse<ProductResponse>
@@ -175,7 +179,9 @@ namespace InventoryManagementAPI.Controllers
                     Price = request.Price,
                     Quantity = request.Quantity,
                     SKU = request.SKU,
-                    ImageUrl = request.ImageUrl
+                    ImageUrl = request.ImageUrl,
+                    TaxRate = request.TaxRate,
+                    Unit = request.Unit
                 };
 
                 _context.Products.Add(product);
@@ -189,7 +195,9 @@ namespace InventoryManagementAPI.Controllers
                     Price = product.Price,
                     Quantity = product.Quantity,
                     SKU = product.SKU,
-                    ImageUrl = product.ImageUrl
+                    ImageUrl = product.ImageUrl,
+                    TaxRate = product.TaxRate,
+                    Unit = product.Unit
                 };
 
                 return CreatedAtAction(nameof(GetProduct), new { id = product.Id },
@@ -243,6 +251,8 @@ namespace InventoryManagementAPI.Controllers
                 product.Quantity = request.Quantity;
                 product.SKU = request.SKU;
                 product.ImageUrl = request.ImageUrl;
+                product.TaxRate = request.TaxRate;
+                product.Unit = request.Unit;
 
                 await _context.SaveChangesAsync();
 
@@ -254,7 +264,9 @@ namespace InventoryManagementAPI.Controllers
                     Price = product.Price,
                     Quantity = product.Quantity,
                     SKU = product.SKU,
-                    ImageUrl = product.ImageUrl
+                    ImageUrl = product.ImageUrl,
+                    TaxRate = product.TaxRate,
+                    Unit = product.Unit
                 };
 
                 return Ok(new ApiResponse<ProductResponse>
