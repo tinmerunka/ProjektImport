@@ -34,5 +34,7 @@ namespace InventoryManagementAPI.Models
 
         // Navigation properties
         public ICollection<InvoiceItem> InvoiceItems { get; set; } = new List<InvoiceItem>();
+        public int CompanyId { get; set; } 
+        public CompanyProfile Company { get; set; }
     }
 }

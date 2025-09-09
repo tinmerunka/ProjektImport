@@ -8,7 +8,7 @@ namespace InventoryManagementAPI.Services
 {
     public interface IJwtService
     {
-        string GenerateToken(User user);
+        string GenerateToken(User user, int? companyId = null);
     }
 
     public class JwtService : IJwtService
@@ -20,12 +20,12 @@ namespace InventoryManagementAPI.Services
             _configuration = configuration;
         }
 
-        public string GenerateToken(User user)
+        public string GenerateToken(User user, int? companyId = null)
         {
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            var claims = new[]
+            var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.Username),
@@ -34,6 +34,10 @@ namespace InventoryManagementAPI.Services
                 new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
+            if (companyId.HasValue)
+            {
+                claims.Add(new Claim("CompanyId", companyId.Value.ToString()));
+            }
 
             var token = new JwtSecurityToken(
                 issuer: _configuration["Jwt:Issuer"],

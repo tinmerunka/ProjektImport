@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace InventoryManagementAPI.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250905112602_AddImageUrlToProduct")]
-    partial class AddImageUrlToProduct
+    [Migration("20250909095015_UserCompanyRelations")]
+    partial class UserCompanyRelations
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -84,12 +84,22 @@ namespace InventoryManagementAPI.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId1")
+                        .HasColumnType("int");
+
                     b.Property<string>("Website")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId1");
 
                     b.ToTable("CompanyProfiles");
                 });
@@ -106,6 +116,12 @@ namespace InventoryManagementAPI.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CompanyId1")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -135,6 +151,10 @@ namespace InventoryManagementAPI.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("CompanyId1");
+
                     b.HasIndex("Email");
 
                     b.HasIndex("Oib");
@@ -154,6 +174,12 @@ namespace InventoryManagementAPI.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CompanyId1")
+                        .HasColumnType("int");
 
                     b.Property<string>("CompanyName")
                         .IsRequired()
@@ -227,6 +253,10 @@ namespace InventoryManagementAPI.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("CompanyId1");
 
                     b.HasIndex("CustomerId");
 
@@ -306,6 +336,12 @@ namespace InventoryManagementAPI.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CompanyId1")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -344,6 +380,10 @@ namespace InventoryManagementAPI.Migrations
                         .HasColumnType("nvarchar(20)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("CompanyId1");
 
                     b.HasIndex("SKU")
                         .IsUnique();
@@ -389,13 +429,61 @@ namespace InventoryManagementAPI.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("InventoryManagementAPI.Models.CompanyProfile", b =>
+                {
+                    b.HasOne("InventoryManagementAPI.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("InventoryManagementAPI.Models.User", "User")
+                        .WithMany("Companies")
+                        .HasForeignKey("UserId1")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("InventoryManagementAPI.Models.Customer", b =>
+                {
+                    b.HasOne("InventoryManagementAPI.Models.CompanyProfile", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("InventoryManagementAPI.Models.CompanyProfile", "Company")
+                        .WithMany("Customers")
+                        .HasForeignKey("CompanyId1")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+                });
+
             modelBuilder.Entity("InventoryManagementAPI.Models.Invoice", b =>
                 {
+                    b.HasOne("InventoryManagementAPI.Models.CompanyProfile", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("InventoryManagementAPI.Models.CompanyProfile", "Company")
+                        .WithMany("Invoices")
+                        .HasForeignKey("CompanyId1")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("InventoryManagementAPI.Models.Customer", "Customer")
                         .WithMany("Invoices")
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Company");
 
                     b.Navigation("Customer");
                 });
@@ -419,6 +507,32 @@ namespace InventoryManagementAPI.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("InventoryManagementAPI.Models.Product", b =>
+                {
+                    b.HasOne("InventoryManagementAPI.Models.CompanyProfile", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("InventoryManagementAPI.Models.CompanyProfile", "Company")
+                        .WithMany("Products")
+                        .HasForeignKey("CompanyId1")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("InventoryManagementAPI.Models.CompanyProfile", b =>
+                {
+                    b.Navigation("Customers");
+
+                    b.Navigation("Invoices");
+
+                    b.Navigation("Products");
+                });
+
             modelBuilder.Entity("InventoryManagementAPI.Models.Customer", b =>
                 {
                     b.Navigation("Invoices");
@@ -432,6 +546,11 @@ namespace InventoryManagementAPI.Migrations
             modelBuilder.Entity("InventoryManagementAPI.Models.Product", b =>
                 {
                     b.Navigation("InvoiceItems");
+                });
+
+            modelBuilder.Entity("InventoryManagementAPI.Models.User", b =>
+                {
+                    b.Navigation("Companies");
                 });
 #pragma warning restore 612, 618
         }

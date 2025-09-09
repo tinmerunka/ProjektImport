@@ -39,5 +39,11 @@ namespace InventoryManagementAPI.Models
 
         [Column(TypeName = "decimal(5,2)")]
         public decimal DefaultTaxRate { get; set; } = 25.00m; // 25% PDV for Croatia
+        public int UserId { get; set; }
+        public User User { get; set; } = null!;
+
+        public ICollection<Product> Products { get; set; }
+        public ICollection<Customer> Customers { get; set; }
+        public ICollection<Invoice> Invoices { get; set; }
     }
 }

@@ -11,13 +11,10 @@ namespace InventoryManagementAPI.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    public class CustomersController : ControllerBase
+    public class CustomersController : CompanyBaseController
     {
-        private readonly AppDbContext _context;
-
-        public CustomersController(AppDbContext context)
+        public CustomersController(AppDbContext context) : base(context)
         {
-            _context = context;
         }
 
         [HttpGet]
@@ -25,7 +22,19 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
-                var query = _context.Customers.AsQueryable();
+                var companyProfile = await GetSelectedCompanyAsync();
+                if (companyProfile == null)
+                {
+                    return BadRequest(new ApiResponse<List<CustomerResponse>>
+                    {
+                        Success = false,
+                        Message = "No valid company selected or company not found"
+                    });
+                }
+
+                var query = _context.Customers
+                    .Where(c => c.CompanyId == companyProfile.Id) // Filter by company
+                    .AsQueryable();
 
                 if (!string.IsNullOrEmpty(searchTerm))
                 {
@@ -71,7 +80,19 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
-                var customer = await _context.Customers.FindAsync(id);
+                var companyProfile = await GetSelectedCompanyAsync();
+                if (companyProfile == null)
+                {
+                    return BadRequest(new ApiResponse<CustomerResponse>
+                    {
+                        Success = false,
+                        Message = "No valid company selected or company not found"
+                    });
+                }
+
+                var customer = await _context.Customers
+                    .Where(c => c.Id == id && c.CompanyId == companyProfile.Id)
+                    .FirstOrDefaultAsync();
 
                 if (customer == null)
                 {
@@ -116,10 +137,32 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
-                // Check if customer with same OIB already exists (if OIB provided)
+                Console.WriteLine($"CreateCustomer called with: {request.Name}");
+
+                var companyProfile = await GetSelectedCompanyAsync();
+                Console.WriteLine($"Company profile retrieved: {companyProfile?.CompanyName ?? "NULL"}");
+
+                if (companyProfile == null)
+                {
+                    Console.WriteLine("No valid company found");
+                    return BadRequest(new ApiResponse<CustomerResponse>
+                    {
+                        Success = false,
+                        Message = "No valid company selected or company not found"
+                    });
+                }
+
+                Console.WriteLine($"Using company ID: {companyProfile.Id}");
+
+                // Check if customer with same OIB already exists within this company
                 if (!string.IsNullOrEmpty(request.Oib))
                 {
-                    if (await _context.Customers.AnyAsync(c => c.Oib == request.Oib))
+                    var existingCustomer = await _context.Customers
+                        .AnyAsync(c => c.Oib == request.Oib && c.CompanyId == companyProfile.Id);
+
+                    Console.WriteLine($"OIB check - exists: {existingCustomer}");
+
+                    if (existingCustomer)
                     {
                         return BadRequest(new ApiResponse<CustomerResponse>
                         {
@@ -129,18 +172,27 @@ namespace InventoryManagementAPI.Controllers
                     }
                 }
 
+                Console.WriteLine("Creating customer object...");
+
                 var customer = new Customer
                 {
                     Name = request.Name,
-                    Address = request.Address,
-                    Oib = request.Oib,
-                    Email = request.Email,
-                    Phone = request.Phone,
-                    IsCompany = request.IsCompany
+                    Address = request.Address ?? string.Empty,
+                    Oib = request.Oib ?? string.Empty,
+                    Email = request.Email ?? string.Empty,
+                    Phone = request.Phone ?? string.Empty,
+                    IsCompany = request.IsCompany,
+                    CompanyId = companyProfile.Id, // Set the company ID
+                    CreatedAt = DateTime.UtcNow
                 };
 
+                Console.WriteLine($"Customer object created with CompanyId: {customer.CompanyId}");
+
                 _context.Customers.Add(customer);
+
+                Console.WriteLine("About to save changes...");
                 await _context.SaveChangesAsync();
+                Console.WriteLine($"Changes saved, customer ID: {customer.Id}");
 
                 var response = new CustomerResponse
                 {
@@ -163,10 +215,21 @@ namespace InventoryManagementAPI.Controllers
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error in CreateCustomer: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                    if (ex.InnerException.InnerException != null)
+                    {
+                        Console.WriteLine($"Inner inner exception: {ex.InnerException.InnerException.Message}");
+                    }
+                }
+
                 return StatusCode(500, new ApiResponse<CustomerResponse>
                 {
                     Success = false,
-                    Message = "An error occurred while creating customer"
+                    Message = $"An error occurred while creating customer: {ex.Message}"
                 });
             }
         }
@@ -176,7 +239,19 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
-                var customer = await _context.Customers.FindAsync(id);
+                var companyProfile = await GetSelectedCompanyAsync();
+                if (companyProfile == null)
+                {
+                    return BadRequest(new ApiResponse<CustomerResponse>
+                    {
+                        Success = false,
+                        Message = "No valid company selected or company not found"
+                    });
+                }
+
+                var customer = await _context.Customers
+                    .Where(c => c.Id == id && c.CompanyId == companyProfile.Id)
+                    .FirstOrDefaultAsync();
 
                 if (customer == null)
                 {
@@ -187,10 +262,10 @@ namespace InventoryManagementAPI.Controllers
                     });
                 }
 
-                // Check if OIB already exists for another customer
+                // Check if OIB already exists for another customer within this company
                 if (!string.IsNullOrEmpty(request.Oib))
                 {
-                    if (await _context.Customers.AnyAsync(c => c.Oib == request.Oib && c.Id != id))
+                    if (await _context.Customers.AnyAsync(c => c.Oib == request.Oib && c.Id != id && c.CompanyId == companyProfile.Id))
                     {
                         return BadRequest(new ApiResponse<CustomerResponse>
                         {
@@ -201,10 +276,10 @@ namespace InventoryManagementAPI.Controllers
                 }
 
                 customer.Name = request.Name;
-                customer.Address = request.Address;
-                customer.Oib = request.Oib;
-                customer.Email = request.Email;
-                customer.Phone = request.Phone;
+                customer.Address = request.Address ?? string.Empty;
+                customer.Oib = request.Oib ?? string.Empty;
+                customer.Email = request.Email ?? string.Empty;
+                customer.Phone = request.Phone ?? string.Empty;
                 customer.IsCompany = request.IsCompany;
 
                 await _context.SaveChangesAsync();
@@ -243,7 +318,19 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
-                var customer = await _context.Customers.FindAsync(id);
+                var companyProfile = await GetSelectedCompanyAsync();
+                if (companyProfile == null)
+                {
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "No valid company selected or company not found"
+                    });
+                }
+
+                var customer = await _context.Customers
+                    .Where(c => c.Id == id && c.CompanyId == companyProfile.Id)
+                    .FirstOrDefaultAsync();
 
                 if (customer == null)
                 {

@@ -20,5 +20,7 @@ namespace InventoryManagementAPI.Models
 
         [StringLength(20)]
         public string Role { get; set; } = "User"; // Default role
+
+        public ICollection<CompanyProfile> Companies { get; set; } 
     }
 }

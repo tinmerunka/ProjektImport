@@ -5,18 +5,17 @@ using InventoryManagementAPI.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace InventoryManagementAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class ProductsController : ControllerBase
+    [Authorize]
+    public class ProductsController : CompanyBaseController
     {
-        private readonly AppDbContext _context;
-
-        public ProductsController(AppDbContext context)
+        public ProductsController(AppDbContext context) : base(context)
         {
-            _context = context;
         }
 
         [HttpGet]
@@ -24,7 +23,19 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
-                var query = _context.Products.AsQueryable();
+                var companyId = GetSelectedCompanyId();
+                if (!companyId.HasValue)
+                {
+                    return BadRequest(new ApiResponse<ProductListResponse>
+                    {
+                        Success = false,
+                        Message = "No company selected"
+                    });
+                }
+
+                var query = _context.Products
+                    .Where(p => p.CompanyId == companyId.Value) // Filter by company
+                    .AsQueryable();
 
                 // Apply search filter
                 if (!string.IsNullOrEmpty(request.SearchTerm))
@@ -98,10 +109,12 @@ namespace InventoryManagementAPI.Controllers
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error in GetProducts: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, new ApiResponse<ProductListResponse>
                 {
                     Success = false,
-                    Message = "An error occurred while retrieving products"
+                    Message = $"An error occurred while retrieving products: {ex.Message}"
                 });
             }
         }
@@ -111,7 +124,19 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
-                var product = await _context.Products.FindAsync(id);
+                var companyId = GetSelectedCompanyId();
+                if (!companyId.HasValue)
+                {
+                    return BadRequest(new ApiResponse<ProductResponse>
+                    {
+                        Success = false,
+                        Message = "No company selected"
+                    });
+                }
+
+                var product = await _context.Products
+                    .Where(p => p.Id == id && p.CompanyId == companyId.Value)
+                    .FirstOrDefaultAsync();
 
                 if (product == null)
                 {
@@ -144,22 +169,63 @@ namespace InventoryManagementAPI.Controllers
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error in GetProduct: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, new ApiResponse<ProductResponse>
                 {
                     Success = false,
-                    Message = "An error occurred while retrieving the product"
+                    Message = $"An error occurred while retrieving the product: {ex.Message}"
                 });
             }
         }
 
         [HttpPost]
-        [Authorize]
         public async Task<ActionResult<ApiResponse<ProductResponse>>> CreateProduct(CreateProductRequest request)
         {
             try
             {
-                // Check if SKU already exists
-                if (await _context.Products.AnyAsync(p => p.SKU == request.SKU))
+                Console.WriteLine($"CreateProduct called with: {request.Name}");
+
+                // Validate model state first
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList();
+
+                    Console.WriteLine($"Model state invalid: {string.Join("; ", errors)}");
+
+                    return BadRequest(new ApiResponse<ProductResponse>
+                    {
+                        Success = false,
+                        Message = string.Join("; ", errors)
+                    });
+                }
+
+                // Use the GetSelectedCompanyAsync method to verify company exists
+                var companyProfile = await GetSelectedCompanyAsync();
+                Console.WriteLine($"Company profile retrieved: {companyProfile?.CompanyName ?? "NULL"}");
+
+                if (companyProfile == null)
+                {
+                    Console.WriteLine("No valid company found");
+                    return BadRequest(new ApiResponse<ProductResponse>
+                    {
+                        Success = false,
+                        Message = "No valid company selected or company not found"
+                    });
+                }
+
+                Console.WriteLine($"Using company ID: {companyProfile.Id}");
+
+                // Check if SKU already exists within the company
+                var existingProduct = await _context.Products
+                    .AnyAsync(p => p.SKU == request.SKU && p.CompanyId == companyProfile.Id);
+
+                Console.WriteLine($"SKU check - exists: {existingProduct}");
+
+                if (existingProduct)
                 {
                     return BadRequest(new ApiResponse<ProductResponse>
                     {
@@ -171,7 +237,6 @@ namespace InventoryManagementAPI.Controllers
                 Console.WriteLine($"Creating product: {request.Name}");
                 Console.WriteLine($"ImageUrl received: {request.ImageUrl}");
 
-
                 var product = new Product
                 {
                     Name = request.Name,
@@ -181,11 +246,18 @@ namespace InventoryManagementAPI.Controllers
                     SKU = request.SKU,
                     ImageUrl = request.ImageUrl,
                     TaxRate = request.TaxRate,
-                    Unit = request.Unit
+                    Unit = request.Unit,
+                    CompanyId = companyProfile.Id, // Use the verified company ID
+                    CreatedAt = DateTime.UtcNow
                 };
 
+                Console.WriteLine($"Product object created, adding to context");
+
                 _context.Products.Add(product);
+
+                Console.WriteLine($"About to save changes");
                 await _context.SaveChangesAsync();
+                Console.WriteLine($"Changes saved, product ID: {product.Id}");
 
                 var productResponse = new ProductResponse
                 {
@@ -210,21 +282,39 @@ namespace InventoryManagementAPI.Controllers
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error in CreateProduct: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
+
                 return StatusCode(500, new ApiResponse<ProductResponse>
                 {
                     Success = false,
-                    Message = "An error occurred while creating the product"
+                    Message = $"An error occurred while creating the product: {ex.Message}"
                 });
             }
         }
 
         [HttpPut("{id}")]
-        [Authorize]
         public async Task<ActionResult<ApiResponse<ProductResponse>>> UpdateProduct(int id, UpdateProductRequest request)
         {
             try
             {
-                var product = await _context.Products.FindAsync(id);
+                var companyProfile = await GetSelectedCompanyAsync();
+                if (companyProfile == null)
+                {
+                    return BadRequest(new ApiResponse<ProductResponse>
+                    {
+                        Success = false,
+                        Message = "No valid company selected or company not found"
+                    });
+                }
+
+                var product = await _context.Products
+                    .Where(p => p.Id == id && p.CompanyId == companyProfile.Id)
+                    .FirstOrDefaultAsync();
 
                 if (product == null)
                 {
@@ -235,8 +325,8 @@ namespace InventoryManagementAPI.Controllers
                     });
                 }
 
-                // Check if SKU already exists (excluding current product)
-                if (await _context.Products.AnyAsync(p => p.SKU == request.SKU && p.Id != id))
+                // Check if SKU already exists (excluding current product, within company)
+                if (await _context.Products.AnyAsync(p => p.SKU == request.SKU && p.Id != id && p.CompanyId == companyProfile.Id))
                 {
                     return BadRequest(new ApiResponse<ProductResponse>
                     {
@@ -278,21 +368,34 @@ namespace InventoryManagementAPI.Controllers
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error in UpdateProduct: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, new ApiResponse<ProductResponse>
                 {
                     Success = false,
-                    Message = "An error occurred while updating the product"
+                    Message = $"An error occurred while updating the product: {ex.Message}"
                 });
             }
         }
 
         [HttpDelete("{id}")]
-        [Authorize]
         public async Task<ActionResult<ApiResponse<object>>> DeleteProduct(int id)
         {
             try
             {
-                var product = await _context.Products.FindAsync(id);
+                var companyProfile = await GetSelectedCompanyAsync();
+                if (companyProfile == null)
+                {
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "No valid company selected or company not found"
+                    });
+                }
+
+                var product = await _context.Products
+                    .Where(p => p.Id == id && p.CompanyId == companyProfile.Id)
+                    .FirstOrDefaultAsync();
 
                 if (product == null)
                 {
@@ -314,10 +417,12 @@ namespace InventoryManagementAPI.Controllers
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error in DeleteProduct: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, new ApiResponse<object>
                 {
                     Success = false,
-                    Message = "An error occurred while deleting the product"
+                    Message = $"An error occurred while deleting the product: {ex.Message}"
                 });
             }
         }

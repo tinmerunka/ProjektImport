@@ -11,11 +11,11 @@ namespace InventoryManagementAPI.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    public class InvoicesController : ControllerBase
+    public class InvoicesController : CompanyBaseController
     {
         private readonly AppDbContext _context;
 
-        public InvoicesController(AppDbContext context)
+        public InvoicesController(AppDbContext context) : base(context)
         {
             _context = context;
         }
@@ -103,9 +103,20 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
+                var companyId = GetSelectedCompanyId();
+                if (!companyId.HasValue)
+                {
+                    return BadRequest(new ApiResponse<InvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "No company selected"
+                    });
+                }
+
                 var invoice = await _context.Invoices
                     .Include(i => i.Items)
-                    .FirstOrDefaultAsync(i => i.Id == id);
+                    .Where(i => i.Id == id && i.CompanyId == companyId.Value) // Add company filtering
+                    .FirstOrDefaultAsync();
 
                 if (invoice == null)
                 {
@@ -177,43 +188,77 @@ namespace InventoryManagementAPI.Controllers
 
             try
             {
-                // Get customer
-                var customer = await _context.Customers.FindAsync(request.CustomerId);
-                if (customer == null)
+                Console.WriteLine($"CreateInvoice called for CustomerId: {request.CustomerId}");
+                Console.WriteLine($"Invoice items: {string.Join(", ", request.Items.Select(i => $"ProductId: {i.ProductId}"))}");
+
+                // Get user's selected company
+                var companyProfile = await GetSelectedCompanyAsync();
+                Console.WriteLine($"Company profile: {companyProfile?.CompanyName ?? "NULL"} (ID: {companyProfile?.Id})");
+
+                if (companyProfile == null)
                 {
+                    Console.WriteLine("No company profile found");
                     return BadRequest(new ApiResponse<InvoiceResponse>
                     {
                         Success = false,
-                        Message = "Customer not found"
+                        Message = "No company selected or company not found"
                     });
                 }
 
-                // Get company profile
-                var companyProfile = await _context.CompanyProfiles.FirstOrDefaultAsync();
-                if (companyProfile == null)
+                // Get customer (ensure it belongs to the same company)
+                var customer = await _context.Customers
+                    .Where(c => c.Id == request.CustomerId && c.CompanyId == companyProfile.Id)
+                    .FirstOrDefaultAsync();
+
+                Console.WriteLine($"Customer found: {customer?.Name ?? "NULL"} (CompanyId: {customer?.CompanyId})");
+
+                if (customer == null)
                 {
-                    return BadRequest(new ApiResponse<InvoiceResponse>
+                    // Check if customer exists but belongs to different company
+                    var customerAnyCompany = await _context.Customers
+                        .Where(c => c.Id == request.CustomerId)
+                        .FirstOrDefaultAsync();
+
+                    if (customerAnyCompany != null)
                     {
-                        Success = false,
-                        Message = "Company profile not found. Please set up company profile first."
-                    });
+                        Console.WriteLine($"Customer exists but belongs to CompanyId: {customerAnyCompany.CompanyId}, user's CompanyId: {companyProfile.Id}");
+                        return BadRequest(new ApiResponse<InvoiceResponse>
+                        {
+                            Success = false,
+                            Message = $"Customer belongs to different company (Customer CompanyId: {customerAnyCompany.CompanyId}, Your CompanyId: {companyProfile.Id})"
+                        });
+                    }
+                    else
+                    {
+                        Console.WriteLine("Customer doesn't exist at all");
+                        return BadRequest(new ApiResponse<InvoiceResponse>
+                        {
+                            Success = false,
+                            Message = "Customer not found"
+                        });
+                    }
                 }
 
                 // Generate invoice number
-                companyProfile.LastInvoiceNumber++;
-                var invoiceNumber = string.Empty;
+                string invoiceNumber;
                 if (request.Type == InvoiceType.Offer)
                 {
-                    invoiceNumber = $"P-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                    companyProfile.LastOfferNumber++;
+                    var prefix = string.IsNullOrEmpty(companyProfile.OfferPrefix) ? "OFF" : companyProfile.OfferPrefix;
+                    invoiceNumber = $"{prefix}-{DateTime.Now.Year}-{companyProfile.LastOfferNumber:D3}";
                 }
-                else {
-                    invoiceNumber = $"R-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                else
+                {
+                    companyProfile.LastInvoiceNumber++;
+                    var prefix = string.IsNullOrEmpty(companyProfile.InvoicePrefix) ? "INV" : companyProfile.InvoicePrefix;
+                    invoiceNumber = $"{prefix}-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
                 }
 
-                // Set due date if not provided
+                Console.WriteLine($"Generated invoice number: {invoiceNumber}");
+
                 var dueDate = request.DueDate ?? DateTime.UtcNow.AddDays(30);
 
-                // Create invoice
+                // Create invoice with company ID
                 var invoice = new Invoice
                 {
                     InvoiceNumber = invoiceNumber,
@@ -224,6 +269,7 @@ namespace InventoryManagementAPI.Controllers
                     CustomerName = customer.Name,
                     CustomerAddress = customer.Address,
                     CustomerOib = customer.Oib,
+                    CompanyId = companyProfile.Id,
                     CompanyName = companyProfile.CompanyName,
                     CompanyAddress = companyProfile.Address,
                     CompanyOib = companyProfile.Oib,
@@ -231,22 +277,49 @@ namespace InventoryManagementAPI.Controllers
                 };
 
                 _context.Invoices.Add(invoice);
-                await _context.SaveChangesAsync(); // Save to get invoice ID
+                await _context.SaveChangesAsync();
 
-                // Process invoice items
+                Console.WriteLine($"Invoice created with ID: {invoice.Id}");
+
                 decimal subTotal = 0;
                 decimal totalTaxAmount = 0;
 
                 foreach (var itemRequest in request.Items)
                 {
-                    var product = await _context.Products.FindAsync(itemRequest.ProductId);
+                    Console.WriteLine($"Processing item with ProductId: {itemRequest.ProductId}");
+
+                    // Ensure product belongs to the same company
+                    var product = await _context.Products
+                        .Where(p => p.Id == itemRequest.ProductId && p.CompanyId == companyProfile.Id)
+                        .FirstOrDefaultAsync();
+
+                    Console.WriteLine($"Product found: {product?.Name ?? "NULL"} (CompanyId: {product?.CompanyId})");
+
                     if (product == null)
                     {
-                        return BadRequest(new ApiResponse<InvoiceResponse>
+                        // Check if product exists but belongs to different company
+                        var productAnyCompany = await _context.Products
+                            .Where(p => p.Id == itemRequest.ProductId)
+                            .FirstOrDefaultAsync();
+
+                        if (productAnyCompany != null)
                         {
-                            Success = false,
-                            Message = $"Product with ID {itemRequest.ProductId} not found"
-                        });
+                            Console.WriteLine($"Product exists but belongs to CompanyId: {productAnyCompany.CompanyId}, user's CompanyId: {companyProfile.Id}");
+                            return BadRequest(new ApiResponse<InvoiceResponse>
+                            {
+                                Success = false,
+                                Message = $"Product {itemRequest.ProductId} belongs to different company (Product CompanyId: {productAnyCompany.CompanyId}, Your CompanyId: {companyProfile.Id})"
+                            });
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Product {itemRequest.ProductId} doesn't exist at all");
+                            return BadRequest(new ApiResponse<InvoiceResponse>
+                            {
+                                Success = false,
+                                Message = $"Product with ID {itemRequest.ProductId} not found"
+                            });
+                        }
                     }
 
                     var unitPrice = itemRequest.OverridePrice ?? product.Price;
@@ -284,7 +357,9 @@ namespace InventoryManagementAPI.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                // Return created invoice
+                Console.WriteLine("Invoice creation completed successfully");
+
+                // Return created invoice (rest of your existing code...)
                 var createdInvoice = await _context.Invoices
                     .Include(i => i.Items)
                     .FirstOrDefaultAsync(i => i.Id == invoice.Id);
@@ -336,10 +411,17 @@ namespace InventoryManagementAPI.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                Console.WriteLine($"Error in CreateInvoice: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
+
                 return StatusCode(500, new ApiResponse<InvoiceResponse>
                 {
                     Success = false,
-                    Message = "An error occurred while creating invoice"
+                    Message = $"An error occurred while creating invoice: {ex.Message}"
                 });
             }
         }
