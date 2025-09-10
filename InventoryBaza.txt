@@ -1,7 +1,7 @@
 USE [master]
 GO
 
-/****** Object:  Database [InventoryManagementDB]    Script Date: 4.9.2025. 14:07:14 ******/
+/****** Object:  Database [InventoryManagementDB]    Script Date: 9.9.2025. 15:11:21 ******/
 CREATE DATABASE [InventoryManagementDB]
  CONTAINMENT = NONE
  ON  PRIMARY 
@@ -117,13 +117,10 @@ ALTER DATABASE [InventoryManagementDB] SET  READ_WRITE
 GO
 
 
-
-
-
 USE [InventoryManagementDB]
 GO
 
-/****** Object:  Table [dbo].[CompanyProfiles]    Script Date: 4.9.2025. 14:06:57 ******/
+/****** Object:  Table [dbo].[CompanyProfiles]    Script Date: 9.9.2025. 15:11:37 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -141,10 +138,11 @@ CREATE TABLE [dbo].[CompanyProfiles](
 	[Website] [nvarchar](200) NOT NULL,
 	[LogoUrl] [nvarchar](max) NULL,
 	[InvoicePrefix] [nvarchar](max) NOT NULL,
-	[LastInvoiceNumber] [int] NOT NULL,
-	[DefaultTaxRate] [decimal](5, 2) NOT NULL,
-	[LastOfferNumber] [int] NOT NULL,
 	[OfferPrefix] [nvarchar](max) NOT NULL,
+	[LastInvoiceNumber] [int] NOT NULL,
+	[LastOfferNumber] [int] NOT NULL,
+	[DefaultTaxRate] [decimal](5, 2) NOT NULL,
+	[UserId] [int] NOT NULL,
  CONSTRAINT [PK_CompanyProfiles] PRIMARY KEY CLUSTERED 
 (
 	[Id] ASC
@@ -152,16 +150,18 @@ CREATE TABLE [dbo].[CompanyProfiles](
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-ALTER TABLE [dbo].[CompanyProfiles] ADD  DEFAULT ((0)) FOR [LastOfferNumber]
+ALTER TABLE [dbo].[CompanyProfiles]  WITH CHECK ADD  CONSTRAINT [FK_CompanyProfiles_Users_UserId] FOREIGN KEY([UserId])
+REFERENCES [dbo].[Users] ([Id])
 GO
 
-ALTER TABLE [dbo].[CompanyProfiles] ADD  DEFAULT (N'') FOR [OfferPrefix]
+ALTER TABLE [dbo].[CompanyProfiles] CHECK CONSTRAINT [FK_CompanyProfiles_Users_UserId]
 GO
+
 
 USE [InventoryManagementDB]
 GO
 
-/****** Object:  Table [dbo].[Customers]    Script Date: 4.9.2025. 14:07:30 ******/
+/****** Object:  Table [dbo].[Customers]    Script Date: 9.9.2025. 15:11:45 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -177,6 +177,7 @@ CREATE TABLE [dbo].[Customers](
 	[Phone] [nvarchar](50) NOT NULL,
 	[IsCompany] [bit] NOT NULL,
 	[CreatedAt] [datetime2](7) NOT NULL,
+	[CompanyId] [int] NOT NULL,
  CONSTRAINT [PK_Customers] PRIMARY KEY CLUSTERED 
 (
 	[Id] ASC
@@ -184,11 +185,18 @@ CREATE TABLE [dbo].[Customers](
 ) ON [PRIMARY]
 GO
 
+ALTER TABLE [dbo].[Customers]  WITH CHECK ADD  CONSTRAINT [FK_Customers_CompanyProfiles_CompanyId] FOREIGN KEY([CompanyId])
+REFERENCES [dbo].[CompanyProfiles] ([Id])
+GO
+
+ALTER TABLE [dbo].[Customers] CHECK CONSTRAINT [FK_Customers_CompanyProfiles_CompanyId]
+GO
+
 
 USE [InventoryManagementDB]
 GO
 
-/****** Object:  Table [dbo].[InvoiceItems]    Script Date: 4.9.2025. 14:07:40 ******/
+/****** Object:  Table [dbo].[InvoiceItems]    Script Date: 9.9.2025. 15:11:53 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -234,7 +242,7 @@ GO
 USE [InventoryManagementDB]
 GO
 
-/****** Object:  Table [dbo].[Invoices]    Script Date: 4.9.2025. 14:07:47 ******/
+/****** Object:  Table [dbo].[Invoices]    Script Date: 9.9.2025. 15:12:01 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -262,11 +270,19 @@ CREATE TABLE [dbo].[Invoices](
 	[Notes] [nvarchar](1000) NULL,
 	[CreatedAt] [datetime2](7) NOT NULL,
 	[UpdatedAt] [datetime2](7) NULL,
+	[CompanyId] [int] NOT NULL,
  CONSTRAINT [PK_Invoices] PRIMARY KEY CLUSTERED 
 (
 	[Id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 ) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[Invoices]  WITH CHECK ADD  CONSTRAINT [FK_Invoices_CompanyProfiles_CompanyId] FOREIGN KEY([CompanyId])
+REFERENCES [dbo].[CompanyProfiles] ([Id])
+GO
+
+ALTER TABLE [dbo].[Invoices] CHECK CONSTRAINT [FK_Invoices_CompanyProfiles_CompanyId]
 GO
 
 ALTER TABLE [dbo].[Invoices]  WITH CHECK ADD  CONSTRAINT [FK_Invoices_Customers_CustomerId] FOREIGN KEY([CustomerId])
@@ -280,7 +296,7 @@ GO
 USE [InventoryManagementDB]
 GO
 
-/****** Object:  Table [dbo].[Products]    Script Date: 4.9.2025. 14:07:53 ******/
+/****** Object:  Table [dbo].[Products]    Script Date: 9.9.2025. 15:12:10 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -294,27 +310,30 @@ CREATE TABLE [dbo].[Products](
 	[Price] [decimal](18, 2) NOT NULL,
 	[Quantity] [int] NOT NULL,
 	[SKU] [nvarchar](50) NOT NULL,
-	[CreatedAt] [datetime2](7) NOT NULL,
 	[TaxRate] [decimal](5, 2) NOT NULL,
 	[Unit] [nvarchar](20) NOT NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[ImageUrl] [nvarchar](max) NULL,
+	[CompanyId] [int] NOT NULL,
  CONSTRAINT [PK_Products] PRIMARY KEY CLUSTERED 
 (
 	[Id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-ALTER TABLE [dbo].[Products] ADD  DEFAULT ((0.0)) FOR [TaxRate]
+ALTER TABLE [dbo].[Products]  WITH CHECK ADD  CONSTRAINT [FK_Products_CompanyProfiles_CompanyId] FOREIGN KEY([CompanyId])
+REFERENCES [dbo].[CompanyProfiles] ([Id])
 GO
 
-ALTER TABLE [dbo].[Products] ADD  DEFAULT (N'') FOR [Unit]
+ALTER TABLE [dbo].[Products] CHECK CONSTRAINT [FK_Products_CompanyProfiles_CompanyId]
 GO
 
 
 USE [InventoryManagementDB]
 GO
 
-/****** Object:  Table [dbo].[Users]    Script Date: 4.9.2025. 14:08:01 ******/
+/****** Object:  Table [dbo].[Users]    Script Date: 9.9.2025. 15:12:17 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -333,6 +352,5 @@ CREATE TABLE [dbo].[Users](
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
-
 
 
