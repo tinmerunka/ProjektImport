@@ -543,6 +543,7 @@ namespace InventoryManagementAPI.Controllers
                         LineTotal = lineTotal,
                         LineTaxAmount = lineTaxAmount,
                         Unit = product.Unit
+
                     };
 
                     _context.InvoiceItems.Add(invoiceItem);

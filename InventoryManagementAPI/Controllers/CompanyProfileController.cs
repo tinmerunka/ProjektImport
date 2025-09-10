@@ -174,6 +174,7 @@ namespace InventoryManagementAPI.Controllers
                     Website = profile.Website,
                     LogoUrl = profile.LogoUrl,
                     InvoicePrefix = profile.InvoicePrefix,
+                    OfferPrefix = profile.OfferPrefix,
                     LastInvoiceNumber = profile.LastInvoiceNumber,
                     DefaultTaxRate = profile.DefaultTaxRate
                 };
