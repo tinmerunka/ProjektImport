@@ -680,7 +680,7 @@ namespace InventoryManagementAPI.Controllers
                 }
 
                 // Only allow deletion of draft invoices
-                if (invoice.Status != InvoiceStatus.Draft )
+                if (invoice.Status != 0)
                 {
                     return BadRequest(new ApiResponse<object>
                     {
