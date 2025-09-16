@@ -143,7 +143,7 @@ namespace InventoryManagementAPI.Controllers
                     return NotFound(new ApiResponse<ProductResponse>
                     {
                         Success = false,
-                        Message = "Product not found"
+                        Message = "Proizvod/usluga nije pronađena"
                     });
                 }
 
@@ -163,7 +163,7 @@ namespace InventoryManagementAPI.Controllers
                 return Ok(new ApiResponse<ProductResponse>
                 {
                     Success = true,
-                    Message = "Product retrieved successfully",
+                    Message = "Uspješno hvatanje podataka",
                     Data = productResponse
                 });
             }
@@ -174,7 +174,7 @@ namespace InventoryManagementAPI.Controllers
                 return StatusCode(500, new ApiResponse<ProductResponse>
                 {
                     Success = false,
-                    Message = $"An error occurred while retrieving the product: {ex.Message}"
+                    Message = $"Došlo je do greške prilikom hvatanja podataka: {ex.Message}"
                 });
             }
         }
@@ -213,7 +213,7 @@ namespace InventoryManagementAPI.Controllers
                     return BadRequest(new ApiResponse<ProductResponse>
                     {
                         Success = false,
-                        Message = "No valid company selected or company not found"
+                        Message = "Ne postoji tvrtka"
                     });
                 }
 
@@ -230,7 +230,7 @@ namespace InventoryManagementAPI.Controllers
                     return BadRequest(new ApiResponse<ProductResponse>
                     {
                         Success = false,
-                        Message = "A product with this SKU already exists"
+                        Message = "Proizvod/usluga s ovom šifrom već postoji"
                     });
                 }
 
@@ -276,7 +276,7 @@ namespace InventoryManagementAPI.Controllers
                     new ApiResponse<ProductResponse>
                     {
                         Success = true,
-                        Message = "Product created successfully",
+                        Message = "Uspješno kreiran proizvod/usluga",
                         Data = productResponse
                     });
             }
@@ -292,7 +292,7 @@ namespace InventoryManagementAPI.Controllers
                 return StatusCode(500, new ApiResponse<ProductResponse>
                 {
                     Success = false,
-                    Message = $"An error occurred while creating the product: {ex.Message}"
+                    Message = $"Došlo je do greške prilikom kreiranja: {ex.Message}"
                 });
             }
         }
@@ -308,7 +308,7 @@ namespace InventoryManagementAPI.Controllers
                     return BadRequest(new ApiResponse<ProductResponse>
                     {
                         Success = false,
-                        Message = "No valid company selected or company not found"
+                        Message = "Ne postoji tvrtka"
                     });
                 }
 
@@ -321,7 +321,7 @@ namespace InventoryManagementAPI.Controllers
                     return NotFound(new ApiResponse<ProductResponse>
                     {
                         Success = false,
-                        Message = "Product not found"
+                        Message = "Proizvod/usluga nije pronađena"
                     });
                 }
 
@@ -331,7 +331,7 @@ namespace InventoryManagementAPI.Controllers
                     return BadRequest(new ApiResponse<ProductResponse>
                     {
                         Success = false,
-                        Message = "A product with this SKU already exists"
+                        Message = "Proizvod/usluga s ovom šifrom već postoji"
                     });
                 }
 
@@ -362,7 +362,7 @@ namespace InventoryManagementAPI.Controllers
                 return Ok(new ApiResponse<ProductResponse>
                 {
                     Success = true,
-                    Message = "Product updated successfully",
+                    Message = "Proizvod/usluga uspjesno ažurirana",
                     Data = productResponse
                 });
             }
@@ -373,7 +373,7 @@ namespace InventoryManagementAPI.Controllers
                 return StatusCode(500, new ApiResponse<ProductResponse>
                 {
                     Success = false,
-                    Message = $"An error occurred while updating the product: {ex.Message}"
+                    Message = $"Došlo je do pogreške prilikom ažuriranja proizvoda/usluge: {ex.Message}"
                 });
             }
         }
@@ -402,7 +402,40 @@ namespace InventoryManagementAPI.Controllers
                     return NotFound(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = "Product not found"
+                        Message = "Proizvod/usluga nije pronađena"
+                    });
+                }
+
+                // Check if product is used in any invoice items
+                var invoiceItems = await _context.InvoiceItems
+                    .Where(ii => ii.ProductId == id)
+                    .Include(ii => ii.Invoice)
+                    .ToListAsync();
+
+                if (invoiceItems.Any())
+                {
+                    // Separate invoices and offers
+                    var invoices = invoiceItems.Where(ii => ii.Invoice.Type == InvoiceType.Invoice).ToList();
+                    var offers = invoiceItems.Where(ii => ii.Invoice.Type == InvoiceType.Offer).ToList();
+
+                    var errorMessages = new List<string>();
+
+                    if (invoices.Any())
+                    {
+                        var invoiceNumbers = invoices.Select(ii => ii.Invoice.InvoiceNumber).Distinct().ToList();
+                        errorMessages.Add($"računima: {string.Join(", ", invoiceNumbers)}");
+                    }
+
+                    if (offers.Any())
+                    {
+                        var offerNumbers = offers.Select(ii => ii.Invoice.InvoiceNumber).Distinct().ToList();
+                        errorMessages.Add($"ponudama: {string.Join(", ", offerNumbers)}");
+                    }
+
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = $"Proizvod/usluga se ne može obrisati jer se koristi u {string.Join(" i ", errorMessages)}"
                     });
                 }
 
@@ -412,7 +445,7 @@ namespace InventoryManagementAPI.Controllers
                 return Ok(new ApiResponse<object>
                 {
                     Success = true,
-                    Message = "Product deleted successfully"
+                    Message = "Uspješno obrisano"
                 });
             }
             catch (Exception ex)
@@ -422,7 +455,7 @@ namespace InventoryManagementAPI.Controllers
                 return StatusCode(500, new ApiResponse<object>
                 {
                     Success = false,
-                    Message = $"An error occurred while deleting the product: {ex.Message}"
+                    Message = $"Došlo je do greške prilikom brisanja proizvoda: {ex.Message}"
                 });
             }
         }
