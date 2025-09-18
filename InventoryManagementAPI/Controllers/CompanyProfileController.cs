@@ -47,8 +47,12 @@ namespace InventoryManagementAPI.Controllers
                     BankAccount = profile.BankAccount,
                     Website = profile.Website,
                     LogoUrl = profile.LogoUrl,
-                    InvoicePrefix = profile.InvoicePrefix,
+                    InvoiceParam1 = profile.InvoiceParam1,
+                    InvoiceParam2 = profile.InvoiceParam2,
+                    OfferParam1 = profile.OfferParam1,
+                    OfferParam2 = profile.OfferParam2,
                     LastInvoiceNumber = profile.LastInvoiceNumber,
+                    LastOfferNumber = profile.LastOfferNumber,
                     DefaultTaxRate = profile.DefaultTaxRate
                 };
 
@@ -74,7 +78,6 @@ namespace InventoryManagementAPI.Controllers
         {
             try
             {
-                // Check if profile already exists
                 if (await _context.CompanyProfiles.AnyAsync())
                 {
                     return BadRequest(new ApiResponse<CompanyProfileResponse>
@@ -93,7 +96,10 @@ namespace InventoryManagementAPI.Controllers
                     Phone = request.Phone,
                     BankAccount = request.BankAccount,
                     Website = request.Website,
-                    InvoicePrefix = request.InvoicePrefix,
+                    InvoiceParam1 = request.InvoiceParam1,
+                    InvoiceParam2 = request.InvoiceParam2,
+                    OfferParam1 = request.OfferParam1,
+                    OfferParam2 = request.OfferParam2,
                     DefaultTaxRate = request.DefaultTaxRate
                 };
 
@@ -111,8 +117,12 @@ namespace InventoryManagementAPI.Controllers
                     BankAccount = profile.BankAccount,
                     Website = profile.Website,
                     LogoUrl = profile.LogoUrl,
-                    InvoicePrefix = profile.InvoicePrefix,
+                    InvoiceParam1 = profile.InvoiceParam1,
+                    InvoiceParam2 = profile.InvoiceParam2,
+                    OfferParam1 = profile.OfferParam1,
+                    OfferParam2 = profile.OfferParam2,
                     LastInvoiceNumber = profile.LastInvoiceNumber,
+                    LastOfferNumber = profile.LastOfferNumber,
                     DefaultTaxRate = profile.DefaultTaxRate
                 };
 
@@ -156,8 +166,10 @@ namespace InventoryManagementAPI.Controllers
                 profile.Phone = request.Phone;
                 profile.BankAccount = request.BankAccount;
                 profile.Website = request.Website;
-                profile.InvoicePrefix = request.InvoicePrefix;
-                profile.OfferPrefix = request.OfferPrefix;
+                profile.InvoiceParam1 = request.InvoiceParam1;
+                profile.InvoiceParam2 = request.InvoiceParam2;
+                profile.OfferParam1 = request.OfferParam1;
+                profile.OfferParam2 = request.OfferParam2;
                 profile.DefaultTaxRate = request.DefaultTaxRate;
 
                 await _context.SaveChangesAsync();
@@ -173,9 +185,12 @@ namespace InventoryManagementAPI.Controllers
                     BankAccount = profile.BankAccount,
                     Website = profile.Website,
                     LogoUrl = profile.LogoUrl,
-                    InvoicePrefix = profile.InvoicePrefix,
-                    OfferPrefix = profile.OfferPrefix,
+                    InvoiceParam1 = profile.InvoiceParam1,
+                    InvoiceParam2 = profile.InvoiceParam2,
+                    OfferParam1 = profile.OfferParam1,
+                    OfferParam2 = profile.OfferParam2,
                     LastInvoiceNumber = profile.LastInvoiceNumber,
+                    LastOfferNumber = profile.LastOfferNumber,
                     DefaultTaxRate = profile.DefaultTaxRate
                 };
 

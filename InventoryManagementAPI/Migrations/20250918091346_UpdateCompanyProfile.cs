@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace InventoryManagementAPI.Migrations
 {
     /// <inheritdoc />
-    public partial class UserCompanyRelations : Migration
+    public partial class UpdateCompanyProfile : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -41,13 +41,14 @@ namespace InventoryManagementAPI.Migrations
                     BankAccount = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     Website = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     LogoUrl = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    InvoicePrefix = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    OfferPrefix = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    InvoiceParam1 = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    InvoiceParam2 = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    OfferParam1 = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    OfferParam2 = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     LastInvoiceNumber = table.Column<int>(type: "int", nullable: false),
                     LastOfferNumber = table.Column<int>(type: "int", nullable: false),
                     DefaultTaxRate = table.Column<decimal>(type: "decimal(5,2)", precision: 5, scale: 2, nullable: false),
-                    UserId = table.Column<int>(type: "int", nullable: false),
-                    UserId1 = table.Column<int>(type: "int", nullable: false)
+                    UserId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -58,12 +59,6 @@ namespace InventoryManagementAPI.Migrations
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_CompanyProfiles_Users_UserId1",
-                        column: x => x.UserId1,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -79,8 +74,7 @@ namespace InventoryManagementAPI.Migrations
                     Phone = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     IsCompany = table.Column<bool>(type: "bit", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    CompanyId = table.Column<int>(type: "int", nullable: false),
-                    CompanyId1 = table.Column<int>(type: "int", nullable: false)
+                    CompanyId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -91,12 +85,6 @@ namespace InventoryManagementAPI.Migrations
                         principalTable: "CompanyProfiles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Customers_CompanyProfiles_CompanyId1",
-                        column: x => x.CompanyId1,
-                        principalTable: "CompanyProfiles",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -114,8 +102,7 @@ namespace InventoryManagementAPI.Migrations
                     Unit = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     ImageUrl = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    CompanyId = table.Column<int>(type: "int", nullable: false),
-                    CompanyId1 = table.Column<int>(type: "int", nullable: false)
+                    CompanyId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -126,12 +113,6 @@ namespace InventoryManagementAPI.Migrations
                         principalTable: "CompanyProfiles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Products_CompanyProfiles_CompanyId1",
-                        column: x => x.CompanyId1,
-                        principalTable: "CompanyProfiles",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -159,8 +140,7 @@ namespace InventoryManagementAPI.Migrations
                     Notes = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    CompanyId = table.Column<int>(type: "int", nullable: false),
-                    CompanyId1 = table.Column<int>(type: "int", nullable: false)
+                    CompanyId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -171,12 +151,6 @@ namespace InventoryManagementAPI.Migrations
                         principalTable: "CompanyProfiles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Invoices_CompanyProfiles_CompanyId1",
-                        column: x => x.CompanyId1,
-                        principalTable: "CompanyProfiles",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_Invoices_Customers_CustomerId",
                         column: x => x.CustomerId,
@@ -226,19 +200,9 @@ namespace InventoryManagementAPI.Migrations
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_CompanyProfiles_UserId1",
-                table: "CompanyProfiles",
-                column: "UserId1");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Customers_CompanyId",
                 table: "Customers",
                 column: "CompanyId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Customers_CompanyId1",
-                table: "Customers",
-                column: "CompanyId1");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Customers_Email",
@@ -266,11 +230,6 @@ namespace InventoryManagementAPI.Migrations
                 column: "CompanyId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Invoices_CompanyId1",
-                table: "Invoices",
-                column: "CompanyId1");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Invoices_CustomerId",
                 table: "Invoices",
                 column: "CustomerId");
@@ -285,11 +244,6 @@ namespace InventoryManagementAPI.Migrations
                 name: "IX_Products_CompanyId",
                 table: "Products",
                 column: "CompanyId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Products_CompanyId1",
-                table: "Products",
-                column: "CompanyId1");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Products_SKU",

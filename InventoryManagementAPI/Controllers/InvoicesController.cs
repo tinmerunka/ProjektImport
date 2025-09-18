@@ -244,14 +244,16 @@ namespace InventoryManagementAPI.Controllers
                 if (request.Type == InvoiceType.Offer)
                 {
                     companyProfile.LastOfferNumber++;
-                    var prefix = string.IsNullOrEmpty(companyProfile.OfferPrefix) ? "OFF" : companyProfile.OfferPrefix;
-                    invoiceNumber = $"{prefix}-{DateTime.Now.Year}-{companyProfile.LastOfferNumber:D3}";
+                    var param1 = string.IsNullOrEmpty(companyProfile.OfferParam1) ? "P" : companyProfile.OfferParam1;
+                    var param2 = string.IsNullOrEmpty(companyProfile.OfferParam2) ? "" : companyProfile.OfferParam2 +;
+                    invoiceNumber = $"{companyProfile.LastOfferNumber}/{param1}/{param2}";
                 }
                 else
                 {
                     companyProfile.LastInvoiceNumber++;
-                    var prefix = string.IsNullOrEmpty(companyProfile.InvoicePrefix) ? "INV" : companyProfile.InvoicePrefix;
-                    invoiceNumber = $"{prefix}-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                    var param1 = string.IsNullOrEmpty(companyProfile.InvoiceParam1) ? "R" : companyProfile.InvoiceParam1;
+                    var param2 = string.IsNullOrEmpty(companyProfile.InvoiceParam2) ? "" : companyProfile.InvoiceParam2 ;
+                    invoiceNumber = $"{companyProfile.LastInvoiceNumber}/{param1}/{param2}";
                 }
 
                 Console.WriteLine($"Generated invoice number: {invoiceNumber}");

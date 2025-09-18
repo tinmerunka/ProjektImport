@@ -51,8 +51,10 @@ namespace InventoryManagementAPI.Controllers
                         BankAccount = c.BankAccount,
                         Website = c.Website,
                         LogoUrl = c.LogoUrl,
-                        InvoicePrefix = c.InvoicePrefix,
-                        OfferPrefix = c.OfferPrefix,
+                        InvoiceParam1 = c.InvoiceParam1,
+                        InvoiceParam2 = c.InvoiceParam2,
+                        OfferParam1 = c.OfferParam1,
+                        OfferParam2 = c.OfferParam2,
                         DefaultTaxRate = c.DefaultTaxRate
                     }).ToList()
                 };
@@ -181,8 +183,10 @@ namespace InventoryManagementAPI.Controllers
                         BankAccount = c.BankAccount,
                         Website = c.Website,
                         LogoUrl = c.LogoUrl,
-                        InvoicePrefix = c.InvoicePrefix,
-                        OfferPrefix = c.OfferPrefix,
+                        InvoiceParam1 = c.InvoiceParam1,
+                        InvoiceParam2 = c.InvoiceParam2,
+                        OfferParam1 = c.OfferParam1,
+                        OfferParam2 = c.OfferParam2,
                         DefaultTaxRate = c.DefaultTaxRate
                     }).ToList()
                 };
@@ -242,8 +246,10 @@ namespace InventoryManagementAPI.Controllers
                 companyProfile.BankAccount = request.BankAccount ?? string.Empty;
                 companyProfile.Website = request.Website ?? string.Empty;
                 companyProfile.LogoUrl = request.LogoUrl;
-                companyProfile.InvoicePrefix = request.InvoicePrefix ?? "INV-";
-                companyProfile.OfferPrefix = request.OfferPrefix ?? "OFF-";
+                companyProfile.InvoiceParam1 = request.InvoiceParam1 ?? string.Empty;
+                companyProfile.InvoiceParam2 = request.InvoiceParam2 ?? string.Empty;
+                companyProfile.OfferParam1 = request.OfferParam1 ?? string.Empty;
+                companyProfile.OfferParam2 = request.OfferParam2 ?? string.Empty;
                 companyProfile.DefaultTaxRate = request.DefaultTaxRate;
 
                 await _context.SaveChangesAsync();
@@ -259,8 +265,10 @@ namespace InventoryManagementAPI.Controllers
                     BankAccount = companyProfile.BankAccount,
                     Website = companyProfile.Website,
                     LogoUrl = companyProfile.LogoUrl,
-                    InvoicePrefix = companyProfile.InvoicePrefix,
-                    OfferPrefix = companyProfile.OfferPrefix,
+                    InvoiceParam1 = companyProfile.InvoiceParam1,
+                    InvoiceParam2 = companyProfile.InvoiceParam2,
+                    OfferParam1 = companyProfile.OfferParam1,
+                    OfferParam2 = companyProfile.OfferParam2,
                     DefaultTaxRate = companyProfile.DefaultTaxRate
                 };
 
@@ -307,8 +315,10 @@ namespace InventoryManagementAPI.Controllers
                     BankAccount = companyProfile.BankAccount,
                     Website = companyProfile.Website,
                     LogoUrl = companyProfile.LogoUrl,
-                    InvoicePrefix = companyProfile.InvoicePrefix,
-                    OfferPrefix = companyProfile.OfferPrefix,
+                    InvoiceParam1 = companyProfile.InvoiceParam1,
+                    InvoiceParam2 = companyProfile.InvoiceParam2,
+                    OfferParam1 = companyProfile.OfferParam1,
+                    OfferParam2 = companyProfile.OfferParam2,
                     DefaultTaxRate = companyProfile.DefaultTaxRate
                 };
 

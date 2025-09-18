@@ -55,11 +55,17 @@ namespace InventoryManagementAPI.DTOs
 
         public string? LogoUrl { get; set; }
 
-        [StringLength(10)]
-        public string? InvoicePrefix { get; set; }
+        [StringLength(50)]
+        public string InvoiceParam1 { get; set; } = string.Empty; 
 
-        [StringLength(10)]
-        public string? OfferPrefix { get; set; }
+        [StringLength(50)]
+        public string InvoiceParam2 { get; set; } = string.Empty; 
+
+        [StringLength(50)]
+        public string OfferParam1 { get; set; } = string.Empty; 
+
+        [StringLength(50)]
+        public string OfferParam2 { get; set; } = string.Empty; 
 
         [Range(0, 100)]
         public decimal DefaultTaxRate { get; set; } = 25.0m;

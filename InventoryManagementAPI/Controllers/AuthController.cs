@@ -101,12 +101,14 @@ namespace InventoryManagementAPI.Controllers
                     Phone = string.Empty,
                     BankAccount = string.Empty, // This was missing and might be required
                     Website = string.Empty,
-                    InvoicePrefix = "INV-",
-                    OfferPrefix = "OFF-",
+                    InvoiceParam1 = "2025", // Default first parameter (could be year)
+                    InvoiceParam2 = "001",  // Default second parameter (could be sequence)
+                    OfferParam1 = "2025",   // Default first parameter for offers
+                    OfferParam2 = "001",    // Default second parameter for offers
                     LastInvoiceNumber = 0,
                     LastOfferNumber = 0,
                     DefaultTaxRate = 25.0m,
-                    UserId = user.Id // Set the foreign key
+                    UserId = user.Id
                 };
 
                 Console.WriteLine($"Adding company to context with UserId: {defaultCompany.UserId}...");

@@ -26,9 +26,17 @@ namespace InventoryManagementAPI.DTOs
         [StringLength(200)]
         public string Website { get; set; } = string.Empty;
 
-        public string InvoicePrefix { get; set; } = "RA";
+        [StringLength(50)]
+        public string InvoiceParam1 { get; set; } = string.Empty;
 
-        public string OfferPrefix { get; set; } = "PO";
+        [StringLength(50)]
+        public string InvoiceParam2 { get; set; } = string.Empty;
+
+        [StringLength(50)]
+        public string OfferParam1 { get; set; } = string.Empty;
+
+        [StringLength(50)]
+        public string OfferParam2 { get; set; } = string.Empty;
 
         [Range(0, 100)]
         public decimal DefaultTaxRate { get; set; } = 25.00m;
@@ -45,8 +53,11 @@ namespace InventoryManagementAPI.DTOs
         public string BankAccount { get; set; } = string.Empty;
         public string Website { get; set; } = string.Empty;
         public string? LogoUrl { get; set; }
-        public string InvoicePrefix { get; set; } = string.Empty;
-        public string OfferPrefix { get; set; } = string.Empty;
+        public string InvoiceParam1 { get; set; } = string.Empty;
+        public string InvoiceParam2 { get; set; } = string.Empty;
+        public string OfferParam1 { get; set; } = string.Empty;
+        public string OfferParam2 { get; set; } = string.Empty;
+
         public int LastInvoiceNumber { get; set; }
         public int LastOfferNumber { get; set; }
         public decimal DefaultTaxRate { get; set; }

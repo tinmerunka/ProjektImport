@@ -32,8 +32,18 @@ namespace InventoryManagementAPI.Models
         public string? LogoUrl { get; set; }
 
         // Invoice settings
-        public string InvoicePrefix { get; set; } = "Rac";
-        public string OfferPrefix { get; set; } = "Pon";
+        [StringLength(50)]
+        public string InvoiceParam1 { get; set; } = string.Empty; // First user input
+
+        [StringLength(50)]
+        public string InvoiceParam2 { get; set; } = string.Empty; // Second user input
+
+        [StringLength(50)]
+        public string OfferParam1 { get; set; } = string.Empty; // First user input
+
+        [StringLength(50)]
+        public string OfferParam2 { get; set; } = string.Empty; // Second user input
+
         public int LastInvoiceNumber { get; set; } = 0;
         public int LastOfferNumber { get; set; } = 0;
 
