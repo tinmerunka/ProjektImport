@@ -245,7 +245,7 @@ namespace InventoryManagementAPI.Controllers
                 {
                     companyProfile.LastOfferNumber++;
                     var param1 = string.IsNullOrEmpty(companyProfile.OfferParam1) ? "P" : companyProfile.OfferParam1;
-                    var param2 = string.IsNullOrEmpty(companyProfile.OfferParam2) ? "" : companyProfile.OfferParam2 +;
+                    var param2 = string.IsNullOrEmpty(companyProfile.OfferParam2) ? "" : companyProfile.OfferParam2 ;
                     invoiceNumber = $"{companyProfile.LastOfferNumber}/{param1}/{param2}";
                 }
                 else
