@@ -687,7 +687,7 @@ namespace InventoryManagementAPI.Controllers
                     return BadRequest(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = "Poslani ili plaćeni računi se ne mogu obrisati"
+                        Message = "Račun koji nije 'draft' se ne može izbrisati"
                     });
                 }
 
