@@ -5,6 +5,7 @@ using InventoryManagementAPI.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace InventoryManagementAPI.Controllers
 {
@@ -68,6 +69,8 @@ namespace InventoryManagementAPI.Controllers
                         TotalAmount = i.TotalAmount,
                         IssueDate = i.IssueDate,
                         DueDate = i.DueDate,
+                        PaidAmount = i.PaidAmount,
+                        RemainingAmount = i.TotalAmount - i.PaidAmount,
                         CreatedAt = i.CreatedAt
                     })
                     .ToListAsync();
@@ -145,6 +148,8 @@ namespace InventoryManagementAPI.Controllers
                     SubTotal = invoice.SubTotal,
                     TaxAmount = invoice.TaxAmount,
                     TotalAmount = invoice.TotalAmount,
+                    PaidAmount = invoice.PaidAmount,
+                    RemainingAmount = invoice.TotalAmount - invoice.PaidAmount,
                     TaxRate = invoice.TaxRate,
                     Notes = invoice.Notes,
                     CreatedAt = invoice.CreatedAt,
@@ -189,7 +194,7 @@ namespace InventoryManagementAPI.Controllers
             try
             {
                 Console.WriteLine($"CreateInvoice called for CustomerId: {request.CustomerId}");
-                Console.WriteLine($"Invoice items: {string.Join(", ", request.Items.Select(i => $"ProductId: {i.ProductId}"))}");
+                Console.WriteLine($"Custom invoice number: {request.CustomInvoiceNumber ?? "Auto-generated"}");
 
                 // Get user's selected company
                 var companyProfile = await GetSelectedCompanyAsync();
@@ -225,7 +230,7 @@ namespace InventoryManagementAPI.Controllers
                         return BadRequest(new ApiResponse<InvoiceResponse>
                         {
                             Success = false,
-                            Message = $"Customer belongs to different company (Customer CompanyId: {customerAnyCompany.CompanyId}, Your CompanyId: {companyProfile.Id})"
+                            Message = $"Customer belongs to different company"
                         });
                     }
                     else
@@ -239,33 +244,108 @@ namespace InventoryManagementAPI.Controllers
                     }
                 }
 
-                // Generate invoice number
+                // Generate or use custom invoice number
                 string invoiceNumber;
-                if (request.Type == InvoiceType.Offer)
+
+                if (!string.IsNullOrWhiteSpace(request.CustomInvoiceNumber))
                 {
-                    companyProfile.LastOfferNumber++;
-                    var param1 = string.IsNullOrEmpty(companyProfile.OfferParam1) ? "P" : companyProfile.OfferParam1;
-                    var param2 = string.IsNullOrEmpty(companyProfile.OfferParam2) ? "" : companyProfile.OfferParam2 ;
-                    invoiceNumber = $"{companyProfile.LastOfferNumber}/{param1}/{param2}";
+                    // Use custom invoice number provided by user
+                    invoiceNumber = request.CustomInvoiceNumber.Trim();
+
+                    // Check if custom invoice number already exists in the same company
+                    var existingInvoice = await _context.Invoices
+                        .Where(i => i.InvoiceNumber == invoiceNumber && i.CompanyId == companyProfile.Id)
+                        .FirstOrDefaultAsync();
+
+                    if (existingInvoice != null)
+                    {
+                        return BadRequest(new ApiResponse<InvoiceResponse>
+                        {
+                            Success = false,
+                            Message = $"Broj računa '{invoiceNumber}' već postoji. Molimo odaberite drugi broj."
+                        });
+                    }
+
+                    Console.WriteLine($"Using custom invoice number: {invoiceNumber}");
                 }
                 else
                 {
-                    companyProfile.LastInvoiceNumber++;
-                    var param1 = string.IsNullOrEmpty(companyProfile.InvoiceParam1) ? "R" : companyProfile.InvoiceParam1;
-                    var param2 = string.IsNullOrEmpty(companyProfile.InvoiceParam2) ? "" : companyProfile.InvoiceParam2 ;
-                    invoiceNumber = $"{companyProfile.LastInvoiceNumber}/{param1}/{param2}";
+                    // Auto-generate invoice number based on type
+                    if (request.Type == InvoiceType.Offer)
+                    {
+                        // Find the highest number from existing offers in this company
+                            var lastOfferNumbers = await _context.Invoices
+                                .Where(i => i.Type == InvoiceType.Offer &&
+                        i.CompanyId == companyProfile.Id)
+                                .Select(i => i.InvoiceNumber)
+                                .ToListAsync();
+
+                        var nextOfferNumber =
+                    ExtractHighestNumber(lastOfferNumbers) + 1;
+
+                        var param1 =
+                    string.IsNullOrEmpty(companyProfile.OfferParam1) ? "P" :
+                     companyProfile.OfferParam1;
+                        var param2 =
+                    string.IsNullOrEmpty(companyProfile.OfferParam2) ? "" :
+                    companyProfile.OfferParam2;
+
+                        if (string.IsNullOrEmpty(param2))
+                        {
+                            invoiceNumber = $"{nextOfferNumber}/{param1}";
+                        }
+                        else
+                        {
+                            invoiceNumber =
+                    $"{nextOfferNumber}/{param1}/{param2}";
+                        }
+                    }
+                    else
+                    {
+                        // Find the highest number from existing invoices in  
+                           var lastInvoiceNumbers = await _context.Invoices
+                               .Where(i => i.Type == InvoiceType.Invoice &&
+                       i.CompanyId == companyProfile.Id)
+                               .Select(i => i.InvoiceNumber)
+                               .ToListAsync();
+
+                        var nextInvoiceNumber =
+                    ExtractHighestNumber(lastInvoiceNumbers) + 1;
+
+                        var param1 =
+                    string.IsNullOrEmpty(companyProfile.InvoiceParam1) ? "R"
+                     : companyProfile.InvoiceParam1;
+                        var param2 =
+                    string.IsNullOrEmpty(companyProfile.InvoiceParam2) ? ""
+                    : companyProfile.InvoiceParam2;
+
+                        if (string.IsNullOrEmpty(param2))
+                        {
+                            invoiceNumber = $"{nextInvoiceNumber}/{param1}";
+                        }
+                        else
+                        {
+                            invoiceNumber =
+                    $"{nextInvoiceNumber}/{param1}/{param2}";
+                        }
+                    }
+
+                    Console.WriteLine($"Auto-generated invoice number: {invoiceNumber}");
                 }
 
-                Console.WriteLine($"Generated invoice number: {invoiceNumber}");
+                // Handle dates properly
+                var currentDateTime = DateTime.UtcNow;
+                var issueDate = request.IssueDate == default ? currentDateTime : request.IssueDate;
+                var dueDate = request.DueDate ?? currentDateTime.AddDays(30);
 
-                var dueDate = request.DueDate ?? DateTime.UtcNow.AddDays(30);
+                Console.WriteLine($"Issue date: {issueDate}, Due date: {dueDate}");
 
                 // Create invoice with company ID
                 var invoice = new Invoice
                 {
                     InvoiceNumber = invoiceNumber,
                     Type = request.Type,
-                    IssueDate = DateTime.UtcNow,
+                    IssueDate = issueDate, // Use the properly handled issue date
                     DueDate = dueDate,
                     CustomerId = customer.Id,
                     CustomerName = customer.Name,
@@ -275,13 +355,15 @@ namespace InventoryManagementAPI.Controllers
                     CompanyName = companyProfile.CompanyName,
                     CompanyAddress = companyProfile.Address,
                     CompanyOib = companyProfile.Oib,
-                    Notes = request.Notes
+                    Notes = request.Notes,
+                    CreatedAt = currentDateTime, // Explicitly set CreatedAt
+                    Status = InvoiceStatus.Draft // Explicitly set initial status
                 };
 
                 _context.Invoices.Add(invoice);
                 await _context.SaveChangesAsync();
 
-                Console.WriteLine($"Invoice created with ID: {invoice.Id}");
+                Console.WriteLine($"Invoice created with ID: {invoice.Id}, IssueDate: {invoice.IssueDate}, CreatedAt: {invoice.CreatedAt}");
 
                 decimal subTotal = 0;
                 decimal totalTaxAmount = 0;
@@ -310,7 +392,7 @@ namespace InventoryManagementAPI.Controllers
                             return BadRequest(new ApiResponse<InvoiceResponse>
                             {
                                 Success = false,
-                                Message = $"Product {itemRequest.ProductId} belongs to different company (Product CompanyId: {productAnyCompany.CompanyId}, Your CompanyId: {companyProfile.Id})"
+                                Message = $"Product {itemRequest.ProductId} belongs to different company"
                             });
                         }
                         else
@@ -361,7 +443,7 @@ namespace InventoryManagementAPI.Controllers
 
                 Console.WriteLine("Invoice creation completed successfully");
 
-                // Return created invoice (rest of your existing code...)
+                // Return created invoice
                 var createdInvoice = await _context.Invoices
                     .Include(i => i.Items)
                     .FirstOrDefaultAsync(i => i.Id == invoice.Id);
@@ -384,6 +466,8 @@ namespace InventoryManagementAPI.Controllers
                     SubTotal = createdInvoice.SubTotal,
                     TaxAmount = createdInvoice.TaxAmount,
                     TotalAmount = createdInvoice.TotalAmount,
+                    PaidAmount = createdInvoice.PaidAmount,
+                    RemainingAmount = createdInvoice.TotalAmount - createdInvoice.PaidAmount,
                     TaxRate = createdInvoice.TaxRate,
                     Notes = createdInvoice.Notes,
                     CreatedAt = createdInvoice.CreatedAt,
@@ -435,9 +519,20 @@ namespace InventoryManagementAPI.Controllers
 
             try
             {
+                var companyProfile = await GetSelectedCompanyAsync();
+                if (companyProfile == null)
+                {
+                    return BadRequest(new ApiResponse<InvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "No company selected or company not found"
+                    });
+                }
+
                 var invoice = await _context.Invoices
                     .Include(i => i.Items)
-                    .FirstOrDefaultAsync(i => i.Id == id);
+                    .Where(i => i.Id == id && i.CompanyId == companyProfile.Id) // Add company filtering
+                    .FirstOrDefaultAsync();
 
                 if (invoice == null)
                 {
@@ -458,19 +553,25 @@ namespace InventoryManagementAPI.Controllers
                     });
                 }
 
+                // Store original type to check if it changed
+                var originalType = invoice.Type;
+
                 // Update invoice type
                 invoice.Type = request.Type;
 
                 // Update customer information if customer changed
                 if (request.CustomerId != invoice.CustomerId)
                 {
-                    var customer = await _context.Customers.FindAsync(request.CustomerId);
+                    var customer = await _context.Customers
+                        .Where(c => c.Id == request.CustomerId && c.CompanyId == companyProfile.Id)
+                        .FirstOrDefaultAsync();
+
                     if (customer == null)
                     {
                         return BadRequest(new ApiResponse<InvoiceResponse>
                         {
                             Success = false,
-                            Message = "Customer not found"
+                            Message = "Customer not found or access denied"
                         });
                     }
 
@@ -482,31 +583,109 @@ namespace InventoryManagementAPI.Controllers
 
                 // Update due date and notes
                 invoice.DueDate = request.DueDate ?? invoice.DueDate;
+                invoice.IssueDate = request.IssueDate;
                 invoice.Notes = request.Notes;
+                invoice.PaidAmount = request.PaidAmount;
 
                 // Update company information from current company profile
-                var companyProfile = await _context.CompanyProfiles.FirstOrDefaultAsync();
-                if (companyProfile != null)
-                {
-                    invoice.CompanyName = companyProfile.CompanyName;
-                    invoice.CompanyAddress = companyProfile.Address;
-                    invoice.CompanyOib = companyProfile.Oib;
-                }
+                invoice.CompanyName = companyProfile.CompanyName;
+                invoice.CompanyAddress = companyProfile.Address;
+                invoice.CompanyOib = companyProfile.Oib;
 
-                // Update invoice number if type changed
-                if (invoice.Type != request.Type)
+                // Handle invoice number update (custom or auto-generated)
+                string newInvoiceNumber;
+
+                if (!string.IsNullOrWhiteSpace(request.CustomInvoiceNumber))
                 {
-                    // Generate new invoice number based on type
-                    companyProfile.LastInvoiceNumber++;
-                    if (request.Type == InvoiceType.Offer)
+                    // Use custom invoice number provided by user
+                    newInvoiceNumber = request.CustomInvoiceNumber.Trim();
+
+                    // Check if custom invoice number already exists in the same company (excluding current invoice)
+                    var existingInvoice = await _context.Invoices
+                        .Where(i => i.InvoiceNumber == newInvoiceNumber &&
+                                   i.CompanyId == companyProfile.Id &&
+                                   i.Id != id) // Exclude current invoice
+                        .FirstOrDefaultAsync();
+
+                    if (existingInvoice != null)
                     {
-                        invoice.InvoiceNumber = $"P-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                        return BadRequest(new ApiResponse<InvoiceResponse>
+                        {
+                            Success = false,
+                            Message = $"Broj računa '{newInvoiceNumber}' već postoji. Molimo odaberite drugi broj."
+                        });
+                    }
+
+                    Console.WriteLine($"Using custom invoice number: {newInvoiceNumber}");
+                }
+                else
+                {
+                    // Auto-generate invoice number if type changed
+                    if (originalType != request.Type)
+                    {
+                        if (request.Type == InvoiceType.Offer)
+                        {
+                            // Get the next offer number based on existing offers only
+                            var lastOfferNumber = await _context.Invoices
+                                .Where(i => i.Type == InvoiceType.Offer && i.CompanyId == companyProfile.Id && i.Id != id)
+                                .Select(i => i.Id)
+                                .DefaultIfEmpty(0)
+                                .MaxAsync();
+
+                            var nextOfferNumber = lastOfferNumber + 1;
+
+                            var param1 = string.IsNullOrEmpty(companyProfile.OfferParam1) ? "P" : companyProfile.OfferParam1;
+                            var param2 = string.IsNullOrEmpty(companyProfile.OfferParam2) ? "" : companyProfile.OfferParam2;
+
+                            if (string.IsNullOrEmpty(param2))
+                            {
+                                newInvoiceNumber = $"{nextOfferNumber}/{param1}";
+                            }
+                            else
+                            {
+                                newInvoiceNumber = $"{nextOfferNumber}/{param1}/{param2}";
+                            }
+
+                            companyProfile.LastOfferNumber = nextOfferNumber;
+                        }
+                        else
+                        {
+                            // Get the next invoice number based on existing invoices only
+                            var lastInvoiceNumber = await _context.Invoices
+                                .Where(i => i.Type == InvoiceType.Invoice && i.CompanyId == companyProfile.Id && i.Id != id)
+                                .Select(i => i.Id)
+                                .DefaultIfEmpty(0)
+                                .MaxAsync();
+
+                            var nextInvoiceNumber = lastInvoiceNumber + 1;
+
+                            var param1 = string.IsNullOrEmpty(companyProfile.InvoiceParam1) ? "R" : companyProfile.InvoiceParam1;
+                            var param2 = string.IsNullOrEmpty(companyProfile.InvoiceParam2) ? "" : companyProfile.InvoiceParam2;
+
+                            if (string.IsNullOrEmpty(param2))
+                            {
+                                newInvoiceNumber = $"{nextInvoiceNumber}/{param1}";
+                            }
+                            else
+                            {
+                                newInvoiceNumber = $"{nextInvoiceNumber}/{param1}/{param2}";
+                            }
+
+                            companyProfile.LastInvoiceNumber = nextInvoiceNumber;
+                        }
+
+                        Console.WriteLine($"Auto-generated new invoice number due to type change: {newInvoiceNumber}");
                     }
                     else
                     {
-                        invoice.InvoiceNumber = $"R-{DateTime.Now.Year}-{companyProfile.LastInvoiceNumber:D3}";
+                        // Keep existing invoice number if type didn't change and no custom number provided
+                        newInvoiceNumber = invoice.InvoiceNumber;
+                        Console.WriteLine($"Keeping existing invoice number: {newInvoiceNumber}");
                     }
                 }
+
+                // Update the invoice number
+                invoice.InvoiceNumber = newInvoiceNumber;
 
                 // Remove existing invoice items
                 _context.InvoiceItems.RemoveRange(invoice.Items);
@@ -517,13 +696,16 @@ namespace InventoryManagementAPI.Controllers
 
                 foreach (var itemRequest in request.Items)
                 {
-                    var product = await _context.Products.FindAsync(itemRequest.ProductId);
+                    var product = await _context.Products
+                        .Where(p => p.Id == itemRequest.ProductId && p.CompanyId == companyProfile.Id)
+                        .FirstOrDefaultAsync();
+
                     if (product == null)
                     {
                         return BadRequest(new ApiResponse<InvoiceResponse>
                         {
                             Success = false,
-                            Message = $"Product with ID {itemRequest.ProductId} not found"
+                            Message = $"Product with ID {itemRequest.ProductId} not found or access denied"
                         });
                     }
 
@@ -545,7 +727,6 @@ namespace InventoryManagementAPI.Controllers
                         LineTotal = lineTotal,
                         LineTaxAmount = lineTaxAmount,
                         Unit = product.Unit
-
                     };
 
                     _context.InvoiceItems.Add(invoiceItem);
@@ -559,6 +740,7 @@ namespace InventoryManagementAPI.Controllers
                 invoice.TaxAmount = totalTaxAmount;
                 invoice.TotalAmount = subTotal + totalTaxAmount;
                 invoice.TaxRate = subTotal > 0 ? (totalTaxAmount / subTotal) * 100 : 0;
+                invoice.RemainingAmount = invoice.TotalAmount - invoice.PaidAmount;
 
                 invoice.UpdatedAt = DateTime.UtcNow;
 
@@ -588,6 +770,8 @@ namespace InventoryManagementAPI.Controllers
                     SubTotal = updatedInvoice.SubTotal,
                     TaxAmount = updatedInvoice.TaxAmount,
                     TotalAmount = updatedInvoice.TotalAmount,
+                    PaidAmount = updatedInvoice.PaidAmount,
+                    RemainingAmount = updatedInvoice.TotalAmount - updatedInvoice.PaidAmount,
                     TaxRate = updatedInvoice.TaxRate,
                     Notes = updatedInvoice.Notes,
                     CreatedAt = updatedInvoice.CreatedAt,
@@ -617,6 +801,8 @@ namespace InventoryManagementAPI.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                Console.WriteLine($"Error in UpdateInvoice: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, new ApiResponse<InvoiceResponse>
                 {
                     Success = false,
@@ -708,6 +894,26 @@ namespace InventoryManagementAPI.Controllers
                     Message = "An error occurred while deleting invoice"
                 });
             }
+        }
+
+        private int ExtractHighestNumber(List<string>
+  invoiceNumbers)
+        {
+            int highest = 0;
+
+            foreach (var number in invoiceNumbers)
+            {
+                if (string.IsNullOrEmpty(number)) continue;
+
+                var parts = number.Split('/');
+                if (parts.Length > 0 && int.TryParse(parts[0],
+        out int num))
+                {
+                    highest = Math.Max(highest, num);
+                }
+            }
+
+            return highest;
         }
     }
 }

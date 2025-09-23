@@ -28,7 +28,7 @@ namespace InventoryManagementAPI.Models
 
         public InvoiceStatus Status { get; set; } = InvoiceStatus.Draft;
 
-        public DateTime IssueDate { get; set; } = DateTime.UtcNow;
+        public DateTime IssueDate { get; set; }
 
         public DateTime? DueDate { get; set; }
 
@@ -67,6 +67,12 @@ namespace InventoryManagementAPI.Models
 
         [Column(TypeName = "decimal(5,2)")]
         public decimal TaxRate { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal PaidAmount { get; set; } = 0.00m;
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal RemainingAmount { get; set; }
 
         [StringLength(1000)]
         public string? Notes { get; set; }

@@ -12,12 +12,18 @@ namespace InventoryManagementAPI.DTOs
         public int CustomerId { get; set; }
 
         public DateTime? DueDate { get; set; }
+        public DateTime IssueDate { get; set; }
+        public decimal PaidAmount { get; set; }
 
         [StringLength(1000)]
         public string? Notes { get; set; }
 
         [Required]
         public List<CreateInvoiceItemRequest> Items { get; set; } = new List<CreateInvoiceItemRequest>();
+        
+        [StringLength(50)]
+        public string? CustomInvoiceNumber { get; set; }
+
     }
 
     public class CreateInvoiceItemRequest
@@ -61,6 +67,8 @@ namespace InventoryManagementAPI.DTOs
         public decimal TaxAmount { get; set; }
         public decimal TotalAmount { get; set; }
         public decimal TaxRate { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
 
         public string? Notes { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -103,6 +111,8 @@ namespace InventoryManagementAPI.DTOs
         public DateTime IssueDate { get; set; }
         public DateTime? DueDate { get; set; }
         public DateTime CreatedAt { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
     }
 
     public class UpdateInvoiceStatusRequest
