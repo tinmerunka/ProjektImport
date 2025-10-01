@@ -45,6 +45,9 @@ namespace InventoryManagementAPI.Models
         public string OfferParam2 { get; set; } = string.Empty; // Second user input
 
         public int LastInvoiceNumber { get; set; } = 0;
+
+        public string? Description { get; set; } = string.Empty;
+
         public int LastOfferNumber { get; set; } = 0;
 
         [Column(TypeName = "decimal(5,2)")]

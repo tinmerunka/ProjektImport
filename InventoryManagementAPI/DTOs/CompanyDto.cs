@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Microsoft.Extensions.Diagnostics.HealthChecks;
+using System.ComponentModel.DataAnnotations;
 
 namespace InventoryManagementAPI.DTOs
 {
@@ -40,6 +41,10 @@ namespace InventoryManagementAPI.DTOs
 
         [Range(0, 100)]
         public decimal DefaultTaxRate { get; set; } = 25.00m;
+
+        public string? LogoUrl { get; set; }
+
+        public string? Description { get; set; }
     }
 
     public class CompanyProfileResponse
@@ -57,7 +62,7 @@ namespace InventoryManagementAPI.DTOs
         public string InvoiceParam2 { get; set; } = string.Empty;
         public string OfferParam1 { get; set; } = string.Empty;
         public string OfferParam2 { get; set; } = string.Empty;
-
+        public string? Description { get; set; }
         public int LastInvoiceNumber { get; set; }
         public int LastOfferNumber { get; set; }
         public decimal DefaultTaxRate { get; set; }

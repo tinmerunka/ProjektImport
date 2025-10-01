@@ -27,10 +27,12 @@ namespace InventoryManagementAPI.Models
         public InvoiceType Type { get; set; } = InvoiceType.Invoice;
 
         public InvoiceStatus Status { get; set; } = InvoiceStatus.Draft;
-
+        public string Currency { get; set; } = "EUR"; // Default currency
+        public string IssueLocation { get; set; } = "Zagreb"; // Default location
         public DateTime IssueDate { get; set; }
 
         public DateTime? DueDate { get; set; }
+        public DateTime? DeliveryDate { get; set; }
 
         // Customer information (snapshot at time of invoice creation)
         public int CustomerId { get; set; }
@@ -73,6 +75,8 @@ namespace InventoryManagementAPI.Models
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal RemainingAmount { get; set; }
+
+        public string PaymentMethod { get; set; } = "Transakijski račun"; // Default method
 
         [StringLength(1000)]
         public string? Notes { get; set; }

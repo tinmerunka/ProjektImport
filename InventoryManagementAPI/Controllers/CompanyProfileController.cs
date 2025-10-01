@@ -53,7 +53,8 @@ namespace InventoryManagementAPI.Controllers
                     OfferParam2 = profile.OfferParam2,
                     LastInvoiceNumber = profile.LastInvoiceNumber,
                     LastOfferNumber = profile.LastOfferNumber,
-                    DefaultTaxRate = profile.DefaultTaxRate
+                    DefaultTaxRate = profile.DefaultTaxRate,
+                    Description = profile.Description
                 };
 
                 return Ok(new ApiResponse<CompanyProfileResponse>
@@ -100,7 +101,9 @@ namespace InventoryManagementAPI.Controllers
                     InvoiceParam2 = request.InvoiceParam2,
                     OfferParam1 = request.OfferParam1,
                     OfferParam2 = request.OfferParam2,
-                    DefaultTaxRate = request.DefaultTaxRate
+                    DefaultTaxRate = request.DefaultTaxRate,
+                    LogoUrl = request.LogoUrl,
+                    Description = request.Description
                 };
 
                 _context.CompanyProfiles.Add(profile);
@@ -123,7 +126,8 @@ namespace InventoryManagementAPI.Controllers
                     OfferParam2 = profile.OfferParam2,
                     LastInvoiceNumber = profile.LastInvoiceNumber,
                     LastOfferNumber = profile.LastOfferNumber,
-                    DefaultTaxRate = profile.DefaultTaxRate
+                    DefaultTaxRate = profile.DefaultTaxRate,
+                    Description = profile.Description
                 };
 
                 return CreatedAtAction(nameof(GetCompanyProfile), new ApiResponse<CompanyProfileResponse>
@@ -171,6 +175,8 @@ namespace InventoryManagementAPI.Controllers
                 profile.OfferParam1 = request.OfferParam1;
                 profile.OfferParam2 = request.OfferParam2;
                 profile.DefaultTaxRate = request.DefaultTaxRate;
+                profile.LogoUrl = request.LogoUrl;
+                profile.Description = request.Description;
 
                 await _context.SaveChangesAsync();
 
@@ -191,7 +197,8 @@ namespace InventoryManagementAPI.Controllers
                     OfferParam2 = profile.OfferParam2,
                     LastInvoiceNumber = profile.LastInvoiceNumber,
                     LastOfferNumber = profile.LastOfferNumber,
-                    DefaultTaxRate = profile.DefaultTaxRate
+                    DefaultTaxRate = profile.DefaultTaxRate,
+                    Description = profile.Description
                 };
 
                 return Ok(new ApiResponse<CompanyProfileResponse>

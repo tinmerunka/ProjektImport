@@ -13,7 +13,11 @@ namespace InventoryManagementAPI.DTOs
 
         public DateTime? DueDate { get; set; }
         public DateTime IssueDate { get; set; }
+        public DateTime? DeliveryDate { get; set; }
+        public string IssueLocation { get; set; } = "Zagreb"; // Default location
         public decimal PaidAmount { get; set; }
+        public string Currency { get; set; } = "EUR"; // Default currency
+        public string PaymentMethod { get; set; } = "Transakcijski račun"; // Default method
 
         [StringLength(1000)]
         public string? Notes { get; set; }
@@ -50,6 +54,9 @@ namespace InventoryManagementAPI.DTOs
         public InvoiceStatus Status { get; set; }
         public DateTime IssueDate { get; set; }
         public DateTime? DueDate { get; set; }
+        public DateTime? DeliveryDate { get; set; }
+        public string IssueLocation { get; set; } = "Zagreb";
+
 
         // Customer info
         public int CustomerId { get; set; }
@@ -69,6 +76,8 @@ namespace InventoryManagementAPI.DTOs
         public decimal TaxRate { get; set; }
         public decimal PaidAmount { get; set; }
         public decimal RemainingAmount { get; set; }
+        public string Currency { get; set; } = "EUR";
+        public string PaymentMethod { get; set; } = "Transakcijski račun";
 
         public string? Notes { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -109,8 +118,13 @@ namespace InventoryManagementAPI.DTOs
         public string CustomerName { get; set; } = string.Empty;
         public decimal TotalAmount { get; set; }
         public DateTime IssueDate { get; set; }
+        public string IssueLocation { get; set; } = "Zagreb";
         public DateTime? DueDate { get; set; }
+        public DateTime? DeliveryDate { get; set; }
         public DateTime CreatedAt { get; set; }
+        public string Currency { get; set; } = "EUR";
+        public string PaymentMethod { get; set; } = "Transakcijski račun";
+        public string? Notes { get; set; } = string.Empty;
         public decimal PaidAmount { get; set; }
         public decimal RemainingAmount { get; set; }
     }

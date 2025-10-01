@@ -68,10 +68,15 @@ namespace InventoryManagementAPI.Controllers
                         CustomerName = i.CustomerName,
                         TotalAmount = i.TotalAmount,
                         IssueDate = i.IssueDate,
+                        IssueLocation = i.IssueLocation,
                         DueDate = i.DueDate,
                         PaidAmount = i.PaidAmount,
                         RemainingAmount = i.TotalAmount - i.PaidAmount,
-                        CreatedAt = i.CreatedAt
+                        CreatedAt = i.CreatedAt,
+                        DeliveryDate = i.DeliveryDate,
+                        Currency = i.Currency,
+                        PaymentMethod = i.PaymentMethod,
+                        Notes = i.Notes
                     })
                     .ToListAsync();
 
@@ -137,7 +142,9 @@ namespace InventoryManagementAPI.Controllers
                     Type = invoice.Type,
                     Status = invoice.Status,
                     IssueDate = invoice.IssueDate,
+                    IssueLocation = invoice.IssueLocation,
                     DueDate = invoice.DueDate,
+                    DeliveryDate = invoice.DeliveryDate,
                     CustomerId = invoice.CustomerId,
                     CustomerName = invoice.CustomerName,
                     CustomerAddress = invoice.CustomerAddress,
@@ -149,6 +156,8 @@ namespace InventoryManagementAPI.Controllers
                     TaxAmount = invoice.TaxAmount,
                     TotalAmount = invoice.TotalAmount,
                     PaidAmount = invoice.PaidAmount,
+                    Currency = invoice.Currency,
+                    PaymentMethod = invoice.PaymentMethod,
                     RemainingAmount = invoice.TotalAmount - invoice.PaidAmount,
                     TaxRate = invoice.TaxRate,
                     Notes = invoice.Notes,
@@ -345,8 +354,12 @@ namespace InventoryManagementAPI.Controllers
                 {
                     InvoiceNumber = invoiceNumber,
                     Type = request.Type,
-                    IssueDate = issueDate, // Use the properly handled issue date
+                    IssueDate = issueDate,
+                    IssueLocation = request.IssueLocation ?? string.Empty, // Ensure it's not null
+                    Currency = request.Currency ?? "EUR", // Provide default if null
+                    PaymentMethod = request.PaymentMethod ?? string.Empty, // Ensure it's not null
                     DueDate = dueDate,
+                    DeliveryDate = request.DeliveryDate, // This can be null
                     CustomerId = customer.Id,
                     CustomerName = customer.Name,
                     CustomerAddress = customer.Address,
@@ -356,8 +369,9 @@ namespace InventoryManagementAPI.Controllers
                     CompanyAddress = companyProfile.Address,
                     CompanyOib = companyProfile.Oib,
                     Notes = request.Notes,
-                    CreatedAt = currentDateTime, // Explicitly set CreatedAt
-                    Status = InvoiceStatus.Draft // Explicitly set initial status
+                    CreatedAt = currentDateTime,
+                    Status = InvoiceStatus.Draft,
+                    PaidAmount = 0 // Initialize to 0
                 };
 
                 _context.Invoices.Add(invoice);
@@ -437,6 +451,7 @@ namespace InventoryManagementAPI.Controllers
                 invoice.TaxAmount = totalTaxAmount;
                 invoice.TotalAmount = subTotal + totalTaxAmount;
                 invoice.TaxRate = subTotal > 0 ? (totalTaxAmount / subTotal) * 100 : 0;
+                
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -455,7 +470,9 @@ namespace InventoryManagementAPI.Controllers
                     Type = createdInvoice.Type,
                     Status = createdInvoice.Status,
                     IssueDate = createdInvoice.IssueDate,
+                    IssueLocation = createdInvoice.IssueLocation,
                     DueDate = createdInvoice.DueDate,
+                    DeliveryDate = createdInvoice.DeliveryDate,
                     CustomerId = createdInvoice.CustomerId,
                     CustomerName = createdInvoice.CustomerName,
                     CustomerAddress = createdInvoice.CustomerAddress,
@@ -467,6 +484,8 @@ namespace InventoryManagementAPI.Controllers
                     TaxAmount = createdInvoice.TaxAmount,
                     TotalAmount = createdInvoice.TotalAmount,
                     PaidAmount = createdInvoice.PaidAmount,
+                    Currency = createdInvoice.Currency,
+                    PaymentMethod = createdInvoice.PaymentMethod,
                     RemainingAmount = createdInvoice.TotalAmount - createdInvoice.PaidAmount,
                     TaxRate = createdInvoice.TaxRate,
                     Notes = createdInvoice.Notes,
@@ -511,7 +530,6 @@ namespace InventoryManagementAPI.Controllers
                 });
             }
         }
-
         [HttpPut("{id}")]
         public async Task<ActionResult<ApiResponse<InvoiceResponse>>> UpdateInvoice(int id, CreateInvoiceRequest request)
         {
@@ -531,7 +549,7 @@ namespace InventoryManagementAPI.Controllers
 
                 var invoice = await _context.Invoices
                     .Include(i => i.Items)
-                    .Where(i => i.Id == id && i.CompanyId == companyProfile.Id) // Add company filtering
+                    .Where(i => i.Id == id && i.CompanyId == companyProfile.Id)
                     .FirstOrDefaultAsync();
 
                 if (invoice == null)
@@ -581,11 +599,21 @@ namespace InventoryManagementAPI.Controllers
                     invoice.CustomerOib = customer.Oib;
                 }
 
-                // Update due date and notes
+                // Update all properties including the missing ones
+                var currentDateTime = DateTime.UtcNow;
+                var issueDate = request.IssueDate == default ? invoice.IssueDate : request.IssueDate;
+
                 invoice.DueDate = request.DueDate ?? invoice.DueDate;
-                invoice.IssueDate = request.IssueDate;
-                invoice.Notes = request.Notes;
+                invoice.IssueDate = issueDate;
+                invoice.IssueLocation = request.IssueLocation ?? invoice.IssueLocation;
+                invoice.Currency = request.Currency ?? invoice.Currency;
+                invoice.PaymentMethod = request.PaymentMethod ?? invoice.PaymentMethod;
+                invoice.Notes = request.Notes ?? invoice.Notes;
                 invoice.PaidAmount = request.PaidAmount;
+                invoice.DeliveryDate = request.DeliveryDate;
+                invoice.UpdatedAt = currentDateTime;
+
+                Console.WriteLine($"Updated properties - IssueLocation: {invoice.IssueLocation}, Currency: {invoice.Currency}, PaymentMethod: {invoice.PaymentMethod}");
 
                 // Update company information from current company profile
                 invoice.CompanyName = companyProfile.CompanyName;
@@ -604,7 +632,7 @@ namespace InventoryManagementAPI.Controllers
                     var existingInvoice = await _context.Invoices
                         .Where(i => i.InvoiceNumber == newInvoiceNumber &&
                                    i.CompanyId == companyProfile.Id &&
-                                   i.Id != id) // Exclude current invoice
+                                   i.Id != id)
                         .FirstOrDefaultAsync();
 
                     if (existingInvoice != null)
@@ -625,14 +653,12 @@ namespace InventoryManagementAPI.Controllers
                     {
                         if (request.Type == InvoiceType.Offer)
                         {
-                            // Get the next offer number based on existing offers only
-                            var lastOfferNumber = await _context.Invoices
+                            var lastOfferNumbers = await _context.Invoices
                                 .Where(i => i.Type == InvoiceType.Offer && i.CompanyId == companyProfile.Id && i.Id != id)
-                                .Select(i => i.Id)
-                                .DefaultIfEmpty(0)
-                                .MaxAsync();
+                                .Select(i => i.InvoiceNumber)
+                                .ToListAsync();
 
-                            var nextOfferNumber = lastOfferNumber + 1;
+                            var nextOfferNumber = ExtractHighestNumber(lastOfferNumbers) + 1;
 
                             var param1 = string.IsNullOrEmpty(companyProfile.OfferParam1) ? "P" : companyProfile.OfferParam1;
                             var param2 = string.IsNullOrEmpty(companyProfile.OfferParam2) ? "" : companyProfile.OfferParam2;
@@ -645,19 +671,15 @@ namespace InventoryManagementAPI.Controllers
                             {
                                 newInvoiceNumber = $"{nextOfferNumber}/{param1}/{param2}";
                             }
-
-                            companyProfile.LastOfferNumber = nextOfferNumber;
                         }
                         else
                         {
-                            // Get the next invoice number based on existing invoices only
-                            var lastInvoiceNumber = await _context.Invoices
+                            var lastInvoiceNumbers = await _context.Invoices
                                 .Where(i => i.Type == InvoiceType.Invoice && i.CompanyId == companyProfile.Id && i.Id != id)
-                                .Select(i => i.Id)
-                                .DefaultIfEmpty(0)
-                                .MaxAsync();
+                                .Select(i => i.InvoiceNumber)
+                                .ToListAsync();
 
-                            var nextInvoiceNumber = lastInvoiceNumber + 1;
+                            var nextInvoiceNumber = ExtractHighestNumber(lastInvoiceNumbers) + 1;
 
                             var param1 = string.IsNullOrEmpty(companyProfile.InvoiceParam1) ? "R" : companyProfile.InvoiceParam1;
                             var param2 = string.IsNullOrEmpty(companyProfile.InvoiceParam2) ? "" : companyProfile.InvoiceParam2;
@@ -670,8 +692,6 @@ namespace InventoryManagementAPI.Controllers
                             {
                                 newInvoiceNumber = $"{nextInvoiceNumber}/{param1}/{param2}";
                             }
-
-                            companyProfile.LastInvoiceNumber = nextInvoiceNumber;
                         }
 
                         Console.WriteLine($"Auto-generated new invoice number due to type change: {newInvoiceNumber}");
@@ -742,8 +762,6 @@ namespace InventoryManagementAPI.Controllers
                 invoice.TaxRate = subTotal > 0 ? (totalTaxAmount / subTotal) * 100 : 0;
                 invoice.RemainingAmount = invoice.TotalAmount - invoice.PaidAmount;
 
-                invoice.UpdatedAt = DateTime.UtcNow;
-
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
@@ -759,7 +777,9 @@ namespace InventoryManagementAPI.Controllers
                     Type = updatedInvoice.Type,
                     Status = updatedInvoice.Status,
                     IssueDate = updatedInvoice.IssueDate,
+                    IssueLocation = updatedInvoice.IssueLocation,
                     DueDate = updatedInvoice.DueDate,
+                    DeliveryDate = updatedInvoice.DeliveryDate,
                     CustomerId = updatedInvoice.CustomerId,
                     CustomerName = updatedInvoice.CustomerName,
                     CustomerAddress = updatedInvoice.CustomerAddress,
@@ -770,6 +790,8 @@ namespace InventoryManagementAPI.Controllers
                     SubTotal = updatedInvoice.SubTotal,
                     TaxAmount = updatedInvoice.TaxAmount,
                     TotalAmount = updatedInvoice.TotalAmount,
+                    Currency = updatedInvoice.Currency,
+                    PaymentMethod = updatedInvoice.PaymentMethod,
                     PaidAmount = updatedInvoice.PaidAmount,
                     RemainingAmount = updatedInvoice.TotalAmount - updatedInvoice.PaidAmount,
                     TaxRate = updatedInvoice.TaxRate,
