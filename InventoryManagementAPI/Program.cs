@@ -18,6 +18,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Register JWT Service
 builder.Services.AddScoped<IJwtService, JwtService>();
 
+// Register Fiscalization Service (no HttpClient needed - creates its own)
+builder.Services.AddScoped<IFiscalizationService, FiscalizationService>();
+
 // Configure CORS
 builder.Services.AddCors(options =>
 {
@@ -43,7 +46,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
-            ClockSkew = TimeSpan.Zero
+            ClockSkew = TimeSpan.FromMinutes(5)
         };
     });
 

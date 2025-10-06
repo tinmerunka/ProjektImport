@@ -83,6 +83,21 @@ namespace InventoryManagementAPI.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
+        [StringLength(50)]
+        public string? Zki { get; set; }
+
+        [StringLength(50)]
+        public string? Jir { get; set; }
+
+        [StringLength(5)]
+        public string? PaymentMethodCode { get; set; }
+
+        public bool Fiscalized { get; set; } = false;
+
+        public DateTime? FiscalizedAt { get; set; }
+
+        [StringLength(int.MaxValue)]
+        public string? FiscalisationMessage { get; set; }
 
         // Navigation properties
         public ICollection<InvoiceItem> Items { get; set; } = new List<InvoiceItem>();

@@ -2,6 +2,7 @@
 using InventoryManagementAPI.DTOs;
 using InventoryManagementAPI.DTOs.InventoryManagementAPI.DTOs;
 using InventoryManagementAPI.Models;
+using InventoryManagementAPI.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,10 +16,305 @@ namespace InventoryManagementAPI.Controllers
     public class InvoicesController : CompanyBaseController
     {
         private readonly AppDbContext _context;
+        private readonly IFiscalizationService _fiscalizationService;
+        private readonly ILogger<InvoicesController> _logger;
 
-        public InvoicesController(AppDbContext context) : base(context)
+        public InvoicesController(AppDbContext context, IFiscalizationService fiscalizationService, ILogger<InvoicesController> logger) : base(context)
         {
             _context = context;
+            _fiscalizationService = fiscalizationService;
+            _logger = logger;
+        }
+
+        // Helper method to generate PaymentMethodCode based on PaymentMethod
+        private string GeneratePaymentMethodCode(string paymentMethod)
+        {
+            if (string.IsNullOrEmpty(paymentMethod))
+                return "O"; // Default to "Ostalo"
+
+            var method = paymentMethod.ToLowerInvariant().Trim();
+
+            return method switch
+            {
+                var x when x.Contains("transakcij") || x.Contains("bankovn") || x.Contains("žiro") || x.Contains("racun") => "T",
+                var x when x.Contains("gotovina") || x.Contains("cash") => "G",
+                var x when x.Contains("kartica") || x.Contains("card") || x.Contains("visa") || x.Contains("mastercard") => "K",
+                _ => "O" // Ostalo - everything else
+            };
+        }
+
+        [HttpGet("debug-jwt-detailed")]
+        [AllowAnonymous]
+        public ActionResult DebugJwtDetailed()
+        {
+            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+
+            if (string.IsNullOrEmpty(authHeader))
+            {
+                return Ok(new { Error = "No Authorization header" });
+            }
+
+            var parts = authHeader.Split(' ');
+            if (parts.Length != 2 || parts[0] != "Bearer")
+            {
+                return Ok(new
+                {
+                    Error = "Invalid Authorization header format",
+                    Parts = parts,
+                    Expected = "Bearer <token>"
+                });
+            }
+
+            var token = parts[1];
+
+            try
+            {
+                // Try to decode the JWT manually
+                var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                var jsonToken = handler.ReadJwtToken(token);
+
+                var claims = jsonToken.Claims.ToDictionary(c => c.Type, c => c.Value);
+
+                // Check expiration
+                var exp = jsonToken.ValidTo;
+                var now = DateTime.UtcNow;
+
+                return Ok(new
+                {
+                    TokenValid = true,
+                    TokenFormat = "Valid JWT",
+                    Claims = claims,
+                    ExpiresAt = exp,
+                    CurrentTime = now,
+                    IsExpired = now > exp,
+                    TimeDifference = (exp - now).TotalMinutes,
+                    TokenLength = token.Length,
+                    TokenDots = token.Count(c => c == '.')
+                });
+            }
+            catch (Exception ex)
+            {
+                return Ok(new
+                {
+                    TokenValid = false,
+                    Error = ex.Message,
+                    TokenPreview = token.Substring(0, Math.Min(50, token.Length)) + "..."
+                });
+            }
+        }
+
+        [HttpGet("debug-auth-pipeline")]
+        [AllowAnonymous]
+        public ActionResult DebugAuthPipeline()
+        {
+            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+
+            var debugInfo = new
+            {
+                HasAuthHeader = !string.IsNullOrEmpty(authHeader),
+                AuthHeader = authHeader,
+                AuthHeaderLength = authHeader?.Length ?? 0,
+
+                // Check if user is authenticated
+                IsAuthenticated = User?.Identity?.IsAuthenticated ?? false,
+
+                // Get all claims if authenticated
+                Claims = User?.Claims?.ToDictionary(c => c.Type, c => c.Value) ?? new Dictionary<string, string>(),
+
+                // Check request headers
+                AllHeaders = Request.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value)),
+
+                // Check if this is reaching the controller
+                ControllerReached = true
+            };
+
+            return Ok(debugInfo);
+        }
+
+        // Test fiscalization endpoint
+        [HttpPost("{id}/fiscalize-test")]
+        public async Task<ActionResult<ApiResponse<FiscalizationResponse>>> TestFiscalizeInvoice(int id)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                _logger.LogInformation($"Starting test fiscalization for invoice ID: {id}");
+
+                var companyId = GetSelectedCompanyId();
+                if (!companyId.HasValue)
+                {
+                    return BadRequest(new ApiResponse<FiscalizationResponse>
+                    {
+                        Success = false,
+                        Message = "No company selected"
+                    });
+                }
+
+                // Get invoice with company validation
+                var invoice = await _context.Invoices
+                    .Include(i => i.Items)
+                    .Where(i => i.Id == id && i.CompanyId == companyId.Value)
+                    .FirstOrDefaultAsync();
+
+                if (invoice == null)
+                {
+                    return NotFound(new ApiResponse<FiscalizationResponse>
+                    {
+                        Success = false,
+                        Message = "Invoice not found"
+                    });
+                }
+
+                if (invoice.Fiscalized)
+                {
+                    return BadRequest(new ApiResponse<FiscalizationResponse>
+                    {
+                        Success = false,
+                        Message = "Invoice is already fiscalized"
+                    });
+                }
+
+                // Get company profile
+                var company = await _context.CompanyProfiles
+                    .Where(c => c.Id == companyId.Value)
+                    .FirstOrDefaultAsync();
+
+                if (company == null)
+                {
+                    return BadRequest(new ApiResponse<FiscalizationResponse>
+                    {
+                        Success = false,
+                        Message = "Company profile not found"
+                    });
+                }
+
+                _logger.LogInformation($"Fiscalizing invoice {invoice.InvoiceNumber} for company {company.CompanyName}");
+
+                // Generate ZKI first
+                var zki = _fiscalizationService.GenerateZki(invoice, company);
+                _logger.LogInformation($"Generated ZKI: {zki}");
+
+                // Update invoice with ZKI before fiscalization attempt
+                invoice.Zki = zki;
+                invoice.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                // Attempt fiscalization
+                var fiscalizationResult = await _fiscalizationService.FiscalizeInvoiceAsync(invoice, company);
+
+                _logger.LogInformation($"Fiscalization result: Success={fiscalizationResult.Success}, Message={fiscalizationResult.Message}");
+
+                // Update invoice with fiscalization results
+                if (fiscalizationResult.Success && !string.IsNullOrEmpty(fiscalizationResult.Jir))
+                {
+                    invoice.Jir = fiscalizationResult.Jir;
+                    invoice.Fiscalized = true;
+                    invoice.FiscalizedAt = fiscalizationResult.FiscalizedAt ?? DateTime.UtcNow;
+                    invoice.FiscalisationMessage = "Successfully fiscalized via test endpoint";
+
+                    _logger.LogInformation($"Invoice successfully fiscalized with JIR: {fiscalizationResult.Jir}");
+                }
+                else
+                {
+                    invoice.FiscalisationMessage = $"Fiscalization failed: {fiscalizationResult.Message}";
+                    _logger.LogWarning($"Fiscalization failed: {fiscalizationResult.Message}");
+                }
+
+                invoice.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                // Include the ZKI in response
+                fiscalizationResult.Zki = zki;
+
+                return Ok(new ApiResponse<FiscalizationResponse>
+                {
+                    Success = fiscalizationResult.Success,
+                    Message = fiscalizationResult.Success
+                        ? "Invoice fiscalization completed successfully"
+                        : $"Invoice fiscalization failed: {fiscalizationResult.Message}",
+                    Data = fiscalizationResult
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, $"Error during test fiscalization of invoice {id}");
+
+                return StatusCode(500, new ApiResponse<FiscalizationResponse>
+                {
+                    Success = false,
+                    Message = $"An error occurred during fiscalization: {ex.Message}",
+                    Data = new FiscalizationResponse
+                    {
+                        Success = false,
+                        Message = ex.Message
+                    }
+                });
+            }
+        }
+
+        // Generate ZKI only endpoint for testing
+        [HttpPost("{id}/generate-zki")]
+        public async Task<ActionResult<ApiResponse<string>>> GenerateZkiOnly(int id)
+        {
+            try
+            {
+                var companyId = GetSelectedCompanyId();
+                if (!companyId.HasValue)
+                {
+                    return BadRequest(new ApiResponse<string>
+                    {
+                        Success = false,
+                        Message = "No company selected"
+                    });
+                }
+
+                var invoice = await _context.Invoices
+                    .Where(i => i.Id == id && i.CompanyId == companyId.Value)
+                    .FirstOrDefaultAsync();
+
+                if (invoice == null)
+                {
+                    return NotFound(new ApiResponse<string>
+                    {
+                        Success = false,
+                        Message = "Invoice not found"
+                    });
+                }
+
+                var company = await _context.CompanyProfiles
+                    .Where(c => c.Id == companyId.Value)
+                    .FirstOrDefaultAsync();
+
+                if (company == null)
+                {
+                    return BadRequest(new ApiResponse<string>
+                    {
+                        Success = false,
+                        Message = "Company profile not found"
+                    });
+                }
+
+                var zki = _fiscalizationService.GenerateZki(invoice, company);
+
+                return Ok(new ApiResponse<string>
+                {
+                    Success = true,
+                    Message = "ZKI generated successfully",
+                    Data = zki
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error generating ZKI for invoice {id}");
+                return StatusCode(500, new ApiResponse<string>
+                {
+                    Success = false,
+                    Message = $"Error generating ZKI: {ex.Message}"
+                });
+            }
         }
 
         [HttpGet]
@@ -76,7 +372,10 @@ namespace InventoryManagementAPI.Controllers
                         DeliveryDate = i.DeliveryDate,
                         Currency = i.Currency,
                         PaymentMethod = i.PaymentMethod,
-                        Notes = i.Notes
+                        PaymentMethodCode = i.PaymentMethodCode,
+                        Notes = i.Notes,
+                        Fiscalized = i.Fiscalized,
+                        Jir = i.Jir
                     })
                     .ToListAsync();
 
@@ -158,10 +457,17 @@ namespace InventoryManagementAPI.Controllers
                     PaidAmount = invoice.PaidAmount,
                     Currency = invoice.Currency,
                     PaymentMethod = invoice.PaymentMethod,
+                    PaymentMethodCode = invoice.PaymentMethodCode,
                     RemainingAmount = invoice.TotalAmount - invoice.PaidAmount,
                     TaxRate = invoice.TaxRate,
                     Notes = invoice.Notes,
                     CreatedAt = invoice.CreatedAt,
+                    UpdatedAt = invoice.UpdatedAt,
+                    Zki = invoice.Zki,
+                    Jir = invoice.Jir,
+                    Fiscalized = invoice.Fiscalized,
+                    FiscalizedAt = invoice.FiscalizedAt,
+                    FiscalisationMessage = invoice.FiscalisationMessage,
                     Items = invoice.Items.Select(item => new InvoiceItemResponse
                     {
                         Id = item.Id,
@@ -283,11 +589,11 @@ namespace InventoryManagementAPI.Controllers
                     if (request.Type == InvoiceType.Offer)
                     {
                         // Find the highest number from existing offers in this company
-                            var lastOfferNumbers = await _context.Invoices
-                                .Where(i => i.Type == InvoiceType.Offer &&
-                        i.CompanyId == companyProfile.Id)
-                                .Select(i => i.InvoiceNumber)
-                                .ToListAsync();
+                        var lastOfferNumbers = await _context.Invoices
+                            .Where(i => i.Type == InvoiceType.Offer &&
+                    i.CompanyId == companyProfile.Id)
+                            .Select(i => i.InvoiceNumber)
+                            .ToListAsync();
 
                         var nextOfferNumber =
                     ExtractHighestNumber(lastOfferNumbers) + 1;
@@ -312,11 +618,11 @@ namespace InventoryManagementAPI.Controllers
                     else
                     {
                         // Find the highest number from existing invoices in  
-                           var lastInvoiceNumbers = await _context.Invoices
-                               .Where(i => i.Type == InvoiceType.Invoice &&
-                       i.CompanyId == companyProfile.Id)
-                               .Select(i => i.InvoiceNumber)
-                               .ToListAsync();
+                        var lastInvoiceNumbers = await _context.Invoices
+                            .Where(i => i.Type == InvoiceType.Invoice &&
+                    i.CompanyId == companyProfile.Id)
+                            .Select(i => i.InvoiceNumber)
+                            .ToListAsync();
 
                         var nextInvoiceNumber =
                     ExtractHighestNumber(lastInvoiceNumbers) + 1;
@@ -349,6 +655,11 @@ namespace InventoryManagementAPI.Controllers
 
                 Console.WriteLine($"Issue date: {issueDate}, Due date: {dueDate}");
 
+                // Auto-generate PaymentMethodCode if not provided
+                var paymentMethodCode = !string.IsNullOrEmpty(request.PaymentMethodCode)
+                    ? request.PaymentMethodCode
+                    : GeneratePaymentMethodCode(request.PaymentMethod);
+
                 // Create invoice with company ID
                 var invoice = new Invoice
                 {
@@ -358,6 +669,7 @@ namespace InventoryManagementAPI.Controllers
                     IssueLocation = request.IssueLocation ?? string.Empty, // Ensure it's not null
                     Currency = request.Currency ?? "EUR", // Provide default if null
                     PaymentMethod = request.PaymentMethod ?? string.Empty, // Ensure it's not null
+                    PaymentMethodCode = paymentMethodCode,
                     DueDate = dueDate,
                     DeliveryDate = request.DeliveryDate, // This can be null
                     CustomerId = customer.Id,
@@ -371,13 +683,18 @@ namespace InventoryManagementAPI.Controllers
                     Notes = request.Notes,
                     CreatedAt = currentDateTime,
                     Status = InvoiceStatus.Draft,
-                    PaidAmount = 0 // Initialize to 0
+                    PaidAmount = 0, // Initialize to 0
+                    Fiscalized = false,
+                    FiscalizedAt = null,
+                    Zki = null,
+                    Jir = null,
+                    FiscalisationMessage = null
                 };
 
                 _context.Invoices.Add(invoice);
                 await _context.SaveChangesAsync();
 
-                Console.WriteLine($"Invoice created with ID: {invoice.Id}, IssueDate: {invoice.IssueDate}, CreatedAt: {invoice.CreatedAt}");
+                Console.WriteLine($"Invoice created with ID: {invoice.Id}, PaymentMethodCode: {invoice.PaymentMethodCode}");
 
                 decimal subTotal = 0;
                 decimal totalTaxAmount = 0;
@@ -451,7 +768,7 @@ namespace InventoryManagementAPI.Controllers
                 invoice.TaxAmount = totalTaxAmount;
                 invoice.TotalAmount = subTotal + totalTaxAmount;
                 invoice.TaxRate = subTotal > 0 ? (totalTaxAmount / subTotal) * 100 : 0;
-                
+
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -486,10 +803,17 @@ namespace InventoryManagementAPI.Controllers
                     PaidAmount = createdInvoice.PaidAmount,
                     Currency = createdInvoice.Currency,
                     PaymentMethod = createdInvoice.PaymentMethod,
+                    PaymentMethodCode = createdInvoice.PaymentMethodCode,
                     RemainingAmount = createdInvoice.TotalAmount - createdInvoice.PaidAmount,
                     TaxRate = createdInvoice.TaxRate,
                     Notes = createdInvoice.Notes,
                     CreatedAt = createdInvoice.CreatedAt,
+                    UpdatedAt = createdInvoice.UpdatedAt,
+                    Zki = createdInvoice.Zki,
+                    Jir = createdInvoice.Jir,
+                    Fiscalized = createdInvoice.Fiscalized,
+                    FiscalizedAt = createdInvoice.FiscalizedAt,
+                    FiscalisationMessage = createdInvoice.FiscalisationMessage,
                     Items = createdInvoice.Items.Select(item => new InvoiceItemResponse
                     {
                         Id = item.Id,
@@ -608,12 +932,23 @@ namespace InventoryManagementAPI.Controllers
                 invoice.IssueLocation = request.IssueLocation ?? invoice.IssueLocation;
                 invoice.Currency = request.Currency ?? invoice.Currency;
                 invoice.PaymentMethod = request.PaymentMethod ?? invoice.PaymentMethod;
+
+                // Auto-generate PaymentMethodCode if not provided, or if PaymentMethod changed
+                if (!string.IsNullOrEmpty(request.PaymentMethodCode))
+                {
+                    invoice.PaymentMethodCode = request.PaymentMethodCode;
+                }
+                else if (request.PaymentMethod != invoice.PaymentMethod)
+                {
+                    invoice.PaymentMethodCode = GeneratePaymentMethodCode(request.PaymentMethod);
+                }
+
                 invoice.Notes = request.Notes ?? invoice.Notes;
                 invoice.PaidAmount = request.PaidAmount;
                 invoice.DeliveryDate = request.DeliveryDate;
                 invoice.UpdatedAt = currentDateTime;
 
-                Console.WriteLine($"Updated properties - IssueLocation: {invoice.IssueLocation}, Currency: {invoice.Currency}, PaymentMethod: {invoice.PaymentMethod}");
+                Console.WriteLine($"Updated properties - PaymentMethod: {invoice.PaymentMethod}, PaymentMethodCode: {invoice.PaymentMethodCode}");
 
                 // Update company information from current company profile
                 invoice.CompanyName = companyProfile.CompanyName;
@@ -792,11 +1127,18 @@ namespace InventoryManagementAPI.Controllers
                     TotalAmount = updatedInvoice.TotalAmount,
                     Currency = updatedInvoice.Currency,
                     PaymentMethod = updatedInvoice.PaymentMethod,
+                    PaymentMethodCode = updatedInvoice.PaymentMethodCode,
                     PaidAmount = updatedInvoice.PaidAmount,
                     RemainingAmount = updatedInvoice.TotalAmount - updatedInvoice.PaidAmount,
                     TaxRate = updatedInvoice.TaxRate,
                     Notes = updatedInvoice.Notes,
                     CreatedAt = updatedInvoice.CreatedAt,
+                    UpdatedAt = updatedInvoice.UpdatedAt,
+                    Zki = updatedInvoice.Zki,
+                    Jir = updatedInvoice.Jir,
+                    Fiscalized = updatedInvoice.Fiscalized,
+                    FiscalizedAt = updatedInvoice.FiscalizedAt,
+                    FiscalisationMessage = updatedInvoice.FiscalisationMessage,
                     Items = updatedInvoice.Items.Select(item => new InvoiceItemResponse
                     {
                         Id = item.Id,
@@ -867,6 +1209,86 @@ namespace InventoryManagementAPI.Controllers
                 {
                     Success = false,
                     Message = "An error occurred while updating invoice status"
+                });
+            }
+        }
+
+        [HttpPut("{id}/fiscalize")]
+        public async Task<ActionResult<ApiResponse<InvoiceResponse>>> FiscalizeInvoice(int id, FiscalizeInvoiceRequest request)
+        {
+            try
+            {
+                var companyId = GetSelectedCompanyId();
+                if (!companyId.HasValue)
+                {
+                    return BadRequest(new ApiResponse<InvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "No company selected"
+                    });
+                }
+
+                var invoice = await _context.Invoices
+                    .Where(i => i.Id == id && i.CompanyId == companyId.Value)
+                    .FirstOrDefaultAsync();
+
+                if (invoice == null)
+                {
+                    return NotFound(new ApiResponse<InvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "Invoice not found"
+                    });
+                }
+
+                if (invoice.Fiscalized)
+                {
+                    return BadRequest(new ApiResponse<InvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "Invoice is already fiscalized"
+                    });
+                }
+
+                // Update fiscalization fields
+                invoice.Zki = request.Zki;
+                invoice.Jir = request.Jir;
+                invoice.Fiscalized = true;
+                invoice.FiscalizedAt = DateTime.UtcNow;
+                invoice.FiscalisationMessage = request.FiscalisationMessage;
+                invoice.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                // Return updated invoice
+                var response = new InvoiceResponse
+                {
+                    Id = invoice.Id,
+                    InvoiceNumber = invoice.InvoiceNumber,
+                    Type = invoice.Type,
+                    Status = invoice.Status,
+                    Zki = invoice.Zki,
+                    Jir = invoice.Jir,
+                    Fiscalized = invoice.Fiscalized,
+                    FiscalizedAt = invoice.FiscalizedAt,
+                    FiscalisationMessage = invoice.FiscalisationMessage,
+                    UpdatedAt = invoice.UpdatedAt
+                    // Add other necessary fields...
+                };
+
+                return Ok(new ApiResponse<InvoiceResponse>
+                {
+                    Success = true,
+                    Message = "Invoice fiscalized successfully",
+                    Data = response
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ApiResponse<InvoiceResponse>
+                {
+                    Success = false,
+                    Message = "An error occurred while fiscalizing invoice"
                 });
             }
         }

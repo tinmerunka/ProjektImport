@@ -39,11 +39,16 @@ namespace InventoryManagementAPI.Services
                 claims.Add(new Claim("CompanyId", companyId.Value.ToString()));
             }
 
+            // Ensure proper DateTime handling
+            var now = DateTime.UtcNow;
+            var expires = now.AddHours(24);
+
             var token = new JwtSecurityToken(
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddHours(24),
+                notBefore: now,
+                expires: expires,
                 signingCredentials: credentials
             );
 

@@ -37,7 +37,7 @@ namespace InventoryManagementAPI.Models
 
         [StringLength(50)]
         public string InvoiceParam2 { get; set; } = string.Empty; // Second user input
-
+        public bool InPDV { get; set; } = true;
         [StringLength(50)]
         public string OfferParam1 { get; set; } = string.Empty; // First user input
 

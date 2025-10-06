@@ -42,6 +42,8 @@ namespace InventoryManagementAPI.DTOs
         [Range(0, 100)]
         public decimal DefaultTaxRate { get; set; } = 25.00m;
 
+        public bool InPDV { get; set; } = true;
+
         public string? LogoUrl { get; set; }
 
         public string? Description { get; set; }
@@ -66,5 +68,6 @@ namespace InventoryManagementAPI.DTOs
         public int LastInvoiceNumber { get; set; }
         public int LastOfferNumber { get; set; }
         public decimal DefaultTaxRate { get; set; }
+        public bool InPDV { get; set; }
     }
 }

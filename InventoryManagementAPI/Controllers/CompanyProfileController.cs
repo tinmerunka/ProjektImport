@@ -54,6 +54,7 @@ namespace InventoryManagementAPI.Controllers
                     LastInvoiceNumber = profile.LastInvoiceNumber,
                     LastOfferNumber = profile.LastOfferNumber,
                     DefaultTaxRate = profile.DefaultTaxRate,
+                    InPDV = profile.InPDV,
                     Description = profile.Description
                 };
 
@@ -102,6 +103,7 @@ namespace InventoryManagementAPI.Controllers
                     OfferParam1 = request.OfferParam1,
                     OfferParam2 = request.OfferParam2,
                     DefaultTaxRate = request.DefaultTaxRate,
+                    InPDV = request.InPDV,
                     LogoUrl = request.LogoUrl,
                     Description = request.Description
                 };
@@ -127,6 +129,7 @@ namespace InventoryManagementAPI.Controllers
                     LastInvoiceNumber = profile.LastInvoiceNumber,
                     LastOfferNumber = profile.LastOfferNumber,
                     DefaultTaxRate = profile.DefaultTaxRate,
+                    InPDV = profile.InPDV,
                     Description = profile.Description
                 };
 
@@ -175,6 +178,7 @@ namespace InventoryManagementAPI.Controllers
                 profile.OfferParam1 = request.OfferParam1;
                 profile.OfferParam2 = request.OfferParam2;
                 profile.DefaultTaxRate = request.DefaultTaxRate;
+                profile.InPDV = request.InPDV;
                 profile.LogoUrl = request.LogoUrl;
                 profile.Description = request.Description;
 
@@ -198,6 +202,7 @@ namespace InventoryManagementAPI.Controllers
                     LastInvoiceNumber = profile.LastInvoiceNumber,
                     LastOfferNumber = profile.LastOfferNumber,
                     DefaultTaxRate = profile.DefaultTaxRate,
+                    InPDV = profile.InPDV,
                     Description = profile.Description
                 };
 
