@@ -118,6 +118,9 @@ namespace InventoryManagementAPI.Services
 
         private string ExtractOibFromFinaCertificate(X509Certificate2 certificate, CompanyProfile company)
         {
+            // Log certificate subject za debugging
+            _logger.LogInformation("Certificate Subject: {Subject}", certificate.Subject);
+
             // Prioritet: Company.FiscalizationOib > Config > Certifikat
             if (company != null && !string.IsNullOrEmpty(company.FiscalizationOib))
             {
@@ -132,17 +135,39 @@ namespace InventoryManagementAPI.Services
                 return configOib;
             }
 
+            // Pokušaj izvući iz Subject-a certifikata
             var subject = certificate.Subject;
+
+            // Različiti formati u kojima može biti OIB:
+            // 1. HR12345678901
             var match = System.Text.RegularExpressions.Regex.Match(subject, @"HR(\d{11})");
             if (match.Success)
             {
-                _logger.LogInformation("Extracted issuer OIB from certificate: {Oib}", match.Groups[1].Value);
-                return match.Groups[1].Value;
+                var oib = match.Groups[1].Value;
+                _logger.LogInformation("Extracted issuer OIB from certificate (HR format): {Oib}", oib);
+                return oib;
             }
 
-            var fallbackOib = "79830143058";
-            _logger.LogWarning("Could not extract OIB from certificate, using fallback: {Oib}", fallbackOib);
-            return fallbackOib;
+            // 2. OID.2.5.4.97=VATHR-12345678901 (European VAT format)
+            match = System.Text.RegularExpressions.Regex.Match(subject, @"VATHR-(\d{11})");
+            if (match.Success)
+            {
+                var oib = match.Groups[1].Value;
+                _logger.LogInformation("Extracted issuer OIB from certificate (VATHR format): {Oib}", oib);
+                return oib;
+            }
+
+            // 3. Samo brojevi u O= (Organization)
+            match = System.Text.RegularExpressions.Regex.Match(subject, @"O=.*?(\d{11})");
+            if (match.Success)
+            {
+                var oib = match.Groups[1].Value;
+                _logger.LogInformation("Extracted issuer OIB from certificate (O= format): {Oib}", oib);
+                return oib;
+            }
+
+            _logger.LogError("Could not extract OIB from certificate! Subject: {Subject}", subject);
+            throw new InvalidOperationException($"Could not extract OIB from certificate. Subject: {subject}");
         }
 
         private string ExtractInvoiceNumber(string fullInvoiceNumber)
