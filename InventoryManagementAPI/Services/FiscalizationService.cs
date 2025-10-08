@@ -54,14 +54,17 @@ namespace InventoryManagementAPI.Services
         {
             try
             {
-                var certificate = LoadFinaCertificate();
-                var certificateOib = ExtractOibFromFinaCertificate(certificate);
+                if (company == null)
+                    throw new ArgumentNullException(nameof(company), "Company profile is required for fiscalization");
+
+                var certificate = LoadFinaCertificate(company);
+                var certificateOib = ExtractOibFromFinaCertificate(certificate, company);
 
                 var zki = GenerateFinaZki(invoice, certificateOib, company);
                 var finaXml = CreateFinaXmlRequest(invoice, company, certificateOib, zki);
                 var signedXml = SignForFina(finaXml, certificate);
 
-                var response = await SendToFinaAsync(signedXml, invoice);
+                var response = await SendToFinaAsync(signedXml, invoice, company);
                 return response;
             }
             catch (Exception ex)
@@ -71,28 +74,38 @@ namespace InventoryManagementAPI.Services
                 {
                     Success = false,
                     Message = $"Fiscalization failed: {ex.Message}",
-                    Zki = GenerateZki(invoice, company)
+                    Zki = company != null ? GenerateZki(invoice, company) : null
                 };
             }
         }
 
         public string GenerateZki(Invoice invoice, CompanyProfile company)
         {
-            var certificate = LoadFinaCertificate();
-            var oib = ExtractOibFromFinaCertificate(certificate);
+            if (company == null)
+                throw new ArgumentNullException(nameof(company), "Company profile is required for ZKI generation");
+
+            var certificate = LoadFinaCertificate(company);
+            var oib = ExtractOibFromFinaCertificate(certificate, company);
             return GenerateFinaZki(invoice, oib, company);
         }
 
-        private X509Certificate2 LoadFinaCertificate()
+        private X509Certificate2 LoadFinaCertificate(CompanyProfile company)
         {
-            var certPath = _configuration["Fiscalization:CertificatePath"] ?? "testcert.pfx";
-            var certPassword = _configuration["Fiscalization:CertificatePassword"] ?? "1234";
-            string fullPath = Path.IsPathRooted(certPath) ? certPath : Path.Combine(_environment.WebRootPath, certPath);
+            if (company == null)
+                throw new ArgumentNullException(nameof(company));
+
+            if (string.IsNullOrEmpty(company.FiscalizationCertificatePath))
+                throw new InvalidOperationException("Certificate path not configured in company profile");
+
+            if (string.IsNullOrEmpty(company.FiscalizationCertificatePassword))
+                throw new InvalidOperationException("Certificate password not configured in company profile");
+
+            var fullPath = Path.Combine(_environment.WebRootPath, company.FiscalizationCertificatePath);
 
             if (!File.Exists(fullPath))
                 throw new FileNotFoundException($"Certificate not found: {fullPath}");
 
-            var cert = new X509Certificate2(fullPath, certPassword, X509KeyStorageFlags.Exportable);
+            var cert = new X509Certificate2(fullPath, company.FiscalizationCertificatePassword, X509KeyStorageFlags.Exportable);
 
             if (!cert.HasPrivateKey)
                 throw new InvalidOperationException("Certificate does not have a private key!");
@@ -103,8 +116,15 @@ namespace InventoryManagementAPI.Services
             return cert;
         }
 
-        private string ExtractOibFromFinaCertificate(X509Certificate2 certificate)
+        private string ExtractOibFromFinaCertificate(X509Certificate2 certificate, CompanyProfile company)
         {
+            // Prioritet: Company.FiscalizationOib > Config > Certifikat
+            if (company != null && !string.IsNullOrEmpty(company.FiscalizationOib))
+            {
+                _logger.LogInformation("Using issuer OIB from company profile: {Oib}", company.FiscalizationOib);
+                return company.FiscalizationOib;
+            }
+
             var configOib = _configuration["Fiscalization:IssuerOib"];
             if (!string.IsNullOrEmpty(configOib))
             {
@@ -149,8 +169,8 @@ namespace InventoryManagementAPI.Services
         {
             var datumVrijeme = invoice.IssueDate.ToString("dd.MM.yyyyTHH:mm:ss");
             var iznosUkupno = invoice.TotalAmount.ToString("F2", CultureInfo.InvariantCulture);
-            var oznPosPr = !string.IsNullOrEmpty(company.InvoiceParam1) ? company.InvoiceParam1 : "01";
-            var oznNapUr = !string.IsNullOrEmpty(company.InvoiceParam2) ? company.InvoiceParam2 : "1";
+            var oznPosPr = company != null && !string.IsNullOrEmpty(company.InvoiceParam1) ? company.InvoiceParam1 : "01";
+            var oznNapUr = company != null && !string.IsNullOrEmpty(company.InvoiceParam2) ? company.InvoiceParam2 : "1";
             var brOznRac = ExtractInvoiceNumber(invoice.InvoiceNumber);
 
             var zkiString = $"{oib}{datumVrijeme}{brOznRac}{oznPosPr}{oznNapUr}{iznosUkupno}";
@@ -171,29 +191,20 @@ namespace InventoryManagementAPI.Services
             var currentDateTime = DateTime.Now.ToString("dd.MM.yyyyTHH:mm:ss");
             var issueDateTime = invoice.IssueDate.ToString("dd.MM.yyyyTHH:mm:ss");
 
-            var oznPosPr = !string.IsNullOrEmpty(company.InvoiceParam1) ? company.InvoiceParam1 : "01";
-            var oznNapUr = !string.IsNullOrEmpty(company.InvoiceParam2) ? company.InvoiceParam2 : "1";
+            var oznPosPr = company != null && !string.IsNullOrEmpty(company.InvoiceParam1) ? company.InvoiceParam1 : "01";
+            var oznNapUr = company != null && !string.IsNullOrEmpty(company.InvoiceParam2) ? company.InvoiceParam2 : "1";
             var brOznRac = ExtractInvoiceNumber(invoice.InvoiceNumber);
             var oznSlijed = "P";
-            var oibOper = _configuration["Fiscalization:OperatorOib"] ?? "79830143058";
 
-            var pdvXml = new StringBuilder();
-            pdvXml.AppendLine($"    <tns:Pdv>");
-            pdvXml.AppendLine($"      <tns:Porez>");
-            pdvXml.AppendLine($"        <tns:Stopa>{invoice.TaxRate.ToString("F2", CultureInfo.InvariantCulture)}</tns:Stopa>");
-            pdvXml.AppendLine($"        <tns:Osnovica>{invoice.SubTotal.ToString("F2", CultureInfo.InvariantCulture)}</tns:Osnovica>");
-            pdvXml.AppendLine($"        <tns:Iznos>{invoice.TaxAmount.ToString("F2", CultureInfo.InvariantCulture)}</tns:Iznos>");
-            pdvXml.AppendLine($"      </tns:Porez>");
-            pdvXml.Append($"    </tns:Pdv>");
+            // OibOper iz company profila, fallback na config
+            var oibOper = company?.FiscalizationOperatorOib
+                ?? _configuration["Fiscalization:OperatorOib"]
+                ?? oib; // Ako ništa, koristi OIB izdavatelja
 
-            var defaultCustomerOib = _configuration["Fiscalization:DefaultCustomerOib"] ?? "";
-            var customerOib = !string.IsNullOrEmpty(invoice.CustomerOib)
-                ? invoice.CustomerOib
-                : defaultCustomerOib;
+            var inPdv = company?.InPDV ?? false;
 
-            var oibKupcaXml = !string.IsNullOrEmpty(customerOib)
-                ? $"<tns:OibKupca>{customerOib}</tns:OibKupca>"
-                : "";
+            // Generiraj PDV strukturu - grupira stavke po stopama PDV-a
+            var pdvXml = GeneratePdvXml(invoice);
 
             var xml = $@"<tns:RacunZahtjev xmlns:tns=""{FINA_NAMESPACE}"" Id=""{elementId}"">
   <tns:Zaglavlje>
@@ -202,7 +213,7 @@ namespace InventoryManagementAPI.Services
   </tns:Zaglavlje>
   <tns:Racun>
     <tns:Oib>{oib}</tns:Oib>
-    <tns:USustPdv>{company.InPDV.ToString().ToLower()}</tns:USustPdv>
+    <tns:USustPdv>{inPdv.ToString().ToLower()}</tns:USustPdv>
     <tns:DatVrijeme>{issueDateTime}</tns:DatVrijeme>
     <tns:OznSlijed>{oznSlijed}</tns:OznSlijed>
     <tns:BrRac>
@@ -214,7 +225,6 @@ namespace InventoryManagementAPI.Services
     <tns:IznosUkupno>{invoice.TotalAmount.ToString("F2", CultureInfo.InvariantCulture)}</tns:IznosUkupno>
     <tns:NacinPlac>{invoice.PaymentMethodCode ?? "G"}</tns:NacinPlac>
     <tns:OibOper>{oibOper}</tns:OibOper>
-    {oibKupcaXml}
     <tns:ZastKod>{zki}</tns:ZastKod>
     <tns:NakDost>false</tns:NakDost>
   </tns:Racun>
@@ -222,6 +232,60 @@ namespace InventoryManagementAPI.Services
 
             _logger.LogDebug("Created FINA XML for invoice {InvoiceNumber}", invoice.InvoiceNumber);
             return xml;
+        }
+
+        /// <summary>
+        /// Generira PDV XML strukturu - grupira stavke računa po stopama PDV-a
+        /// </summary>
+        private string GeneratePdvXml(Invoice invoice)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("    <tns:Pdv>");
+
+            // Ako invoice nema Items (stari način), koristi invoice-level PDV podatke
+            if (invoice.Items == null || !invoice.Items.Any())
+            {
+                _logger.LogWarning("Invoice {InvoiceNumber} has no items, using invoice-level tax data",
+                    invoice.InvoiceNumber);
+
+                sb.AppendLine("      <tns:Porez>");
+                sb.AppendLine($"        <tns:Stopa>{invoice.TaxRate.ToString("F2", CultureInfo.InvariantCulture)}</tns:Stopa>");
+                sb.AppendLine($"        <tns:Osnovica>{invoice.SubTotal.ToString("F2", CultureInfo.InvariantCulture)}</tns:Osnovica>");
+                sb.AppendLine($"        <tns:Iznos>{invoice.TaxAmount.ToString("F2", CultureInfo.InvariantCulture)}</tns:Iznos>");
+                sb.AppendLine("      </tns:Porez>");
+            }
+            else
+            {
+                // Grupiraj stavke po stopama PDV-a
+                var taxGroups = invoice.Items
+                    .GroupBy(item => item.TaxRate)
+                    .OrderByDescending(g => g.Key) // Poredaj po stopi (najviša prva)
+                    .ToList();
+
+                _logger.LogDebug("Invoice {InvoiceNumber} has {GroupCount} different tax rates",
+                    invoice.InvoiceNumber, taxGroups.Count);
+
+                foreach (var taxGroup in taxGroups)
+                {
+                    var taxRate = taxGroup.Key;
+
+                    // Izračunaj osnovicu i PDV za ovu grupu
+                    var taxAmount = taxGroup.Sum(item => item.LineTaxAmount);
+                    var subTotal = taxGroup.Sum(item => item.LineTotal - item.LineTaxAmount);
+
+                    sb.AppendLine("      <tns:Porez>");
+                    sb.AppendLine($"        <tns:Stopa>{taxRate.ToString("F2", CultureInfo.InvariantCulture)}</tns:Stopa>");
+                    sb.AppendLine($"        <tns:Osnovica>{subTotal.ToString("F2", CultureInfo.InvariantCulture)}</tns:Osnovica>");
+                    sb.AppendLine($"        <tns:Iznos>{taxAmount.ToString("F2", CultureInfo.InvariantCulture)}</tns:Iznos>");
+                    sb.AppendLine("      </tns:Porez>");
+
+                    _logger.LogDebug("Tax group: Rate={TaxRate}%, Base={SubTotal}, Tax={TaxAmount}",
+                        taxRate, subTotal, taxAmount);
+                }
+            }
+
+            sb.Append("    </tns:Pdv>");
+            return sb.ToString();
         }
 
         private string SignForFina(string xmlContent, X509Certificate2 certificate)
@@ -268,25 +332,47 @@ namespace InventoryManagementAPI.Services
             try
             {
                 var type = isSoap ? "SOAP" : "SIGNED";
-                var fileName = $"Fina_{type}_{invoiceNumber}_{DateTime.Now:yyyyMMddHHmmssfff}.xml";
-                var debugFolder = Path.Combine(_environment.WebRootPath ?? ".", "FiscalizationDebug");
+
+                // Sanitiziraj invoice number - ukloni nedozvoljene karaktere za filename
+                var safeInvoiceNumber = invoiceNumber
+                    .Replace("/", "_")
+                    .Replace("\\", "_")
+                    .Replace(":", "_")
+                    .Replace("*", "_")
+                    .Replace("?", "_")
+                    .Replace("\"", "_")
+                    .Replace("<", "_")
+                    .Replace(">", "_")
+                    .Replace("|", "_");
+
+                var fileName = $"Fina_{type}_{safeInvoiceNumber}_{DateTime.Now:yyyyMMddHHmmssfff}.xml";
+
+                // Koristi ContentRootPath kao fallback ili kreiraj u projektu
+                var rootPath = _environment.WebRootPath ?? _environment.ContentRootPath ?? Directory.GetCurrentDirectory();
+                var debugFolder = Path.Combine(rootPath, "FiscalizationDebug");
+
+                _logger.LogInformation("Attempting to save XML to: {DebugFolder}", debugFolder);
 
                 if (!Directory.Exists(debugFolder))
+                {
                     Directory.CreateDirectory(debugFolder);
+                    _logger.LogInformation("Created debug folder: {DebugFolder}", debugFolder);
+                }
 
                 var filePath = Path.Combine(debugFolder, fileName);
                 File.WriteAllText(filePath, xmlContent, Encoding.UTF8);
 
                 _logger.LogInformation("[DEBUG] {Type} XML for invoice {InvoiceNumber} saved: {FilePath}",
-                    type, invoiceNumber, filePath);
+                    type, safeInvoiceNumber, filePath);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to save debug XML for invoice {InvoiceNumber}", invoiceNumber);
+                _logger.LogError(ex, "Failed to save debug XML for invoice {InvoiceNumber}. Folder: {WebRootPath}",
+                    invoiceNumber, _environment.WebRootPath ?? "NULL");
             }
         }
 
-        private async Task<FiscalizationResponse> SendToFinaAsync(string signedXml, Invoice invoice)
+        private async Task<FiscalizationResponse> SendToFinaAsync(string signedXml, Invoice invoice, CompanyProfile company)
         {
             try
             {
@@ -384,7 +470,7 @@ namespace InventoryManagementAPI.Services
                         Message = "Fiscalization successful",
                         Jir = jirNode.InnerText,
                         FiscalizedAt = DateTime.UtcNow,
-                        Zki = GenerateZki(invoice, null)
+                        Zki = GenerateZki(invoice, company)
                     };
                 }
 

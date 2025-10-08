@@ -26,6 +26,9 @@ namespace InventoryManagementAPI.Models
         [Column(TypeName = "decimal(5,2)")]
         public decimal TaxRate { get; set; } = 25.00m; // Default 25% PDV
 
+        [StringLength(100)]
+        public string? TaxReason { get; set; } 
+
         [StringLength(20)]
         public string Unit { get; set; } = "kom"; // kom, kg, m², lit, etc.
 

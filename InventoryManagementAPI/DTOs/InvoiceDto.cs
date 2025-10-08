@@ -77,6 +77,7 @@ namespace InventoryManagementAPI.DTOs
         public decimal TaxAmount { get; set; }
         public decimal TotalAmount { get; set; }
         public decimal TaxRate { get; set; }
+        public string TaxReason { get; set; } = "Manji porez";
         public decimal PaidAmount { get; set; }
         public decimal RemainingAmount { get; set; }
         public string Currency { get; set; } = "EUR";
@@ -87,12 +88,12 @@ namespace InventoryManagementAPI.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 
-        // Fiscalization fields
-        public string? Zki { get; set; }
+        // Fiskalizacija
+        public string FiscalizationStatus { get; set; } = "not_required";
         public string? Jir { get; set; }
-        public bool Fiscalized { get; set; }
+        public string? Zki { get; set; }
         public DateTime? FiscalizedAt { get; set; }
-        public string? FiscalisationMessage { get; set; }
+        public string? FiscalizationError { get; set; }
 
         public List<InvoiceItemResponse> Items { get; set; } = new List<InvoiceItemResponse>();
     }

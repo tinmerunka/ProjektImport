@@ -69,5 +69,28 @@ namespace InventoryManagementAPI.DTOs
         public int LastOfferNumber { get; set; }
         public decimal DefaultTaxRate { get; set; }
         public bool InPDV { get; set; }
+        // Fiskalizacija
+        public bool FiscalizationEnabled { get; set; }
+        public bool HasCertificate { get; set; } // Ne vraćaj path i password!
+        public string? FiscalizationOib { get; set; }
+        public bool AutoFiscalize { get; set; }
+    }
+
+    public class UpdateFiscalizationSettingsRequest
+    {
+        public bool FiscalizationEnabled { get; set; }
+        public string? FiscalizationOib { get; set; }
+        public string? FiscalizationOperatorOib { get; set; }
+        public bool AutoFiscalize { get; set; }
+    }
+
+    public class UploadCertificateRequest
+    {
+        [Required]
+        public IFormFile Certificate { get; set; } = null!;
+
+        [Required]
+        [StringLength(100)]
+        public string Password { get; set; } = string.Empty;
     }
 }

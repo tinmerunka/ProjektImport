@@ -12,8 +12,9 @@ namespace InventoryManagementAPI.Models
     public enum InvoiceStatus
     {
         Draft = 0,
-        Sent = 1,
+        Fiscalized = 1,
         Paid = 2,
+        Finalized = 3,
         Cancelled = 3
     }
     public class Invoice
@@ -69,6 +70,10 @@ namespace InventoryManagementAPI.Models
 
         [Column(TypeName = "decimal(5,2)")]
         public decimal TaxRate { get; set; }
+        // Kombinirani razlog oslobođenja za cijeli račun (iz svih proizvoda s 0% PDV)
+        // Ovo se automatski popunjava pri kreiranju računa
+        [StringLength(1000)]
+        public string? TaxExemptionSummary { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal PaidAmount { get; set; } = 0.00m;
@@ -77,27 +82,28 @@ namespace InventoryManagementAPI.Models
         public decimal RemainingAmount { get; set; }
 
         public string PaymentMethod { get; set; } = "Transakijski račun"; // Default method
+        public string PaymentMethodCode { get; set; }
 
         [StringLength(1000)]
         public string? Notes { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
+
+        // Fiskalizacija
         [StringLength(50)]
-        public string? Zki { get; set; }
+        public string FiscalizationStatus { get; set; } = "not_required"; // not_required, pending, fiscalized, failed
 
-        [StringLength(50)]
-        public string? Jir { get; set; }
+        [StringLength(100)]
+        public string? Jir { get; set; } // Jedinstveni identifikator računa
 
-        [StringLength(5)]
-        public string? PaymentMethodCode { get; set; }
-
-        public bool Fiscalized { get; set; } = false;
+        [StringLength(100)]
+        public string? Zki { get; set; } // Zaštitni kod izdavatelja
 
         public DateTime? FiscalizedAt { get; set; }
 
-        [StringLength(int.MaxValue)]
-        public string? FiscalisationMessage { get; set; }
+        [StringLength(1000)]
+        public string? FiscalizationError { get; set; }
 
         // Navigation properties
         public ICollection<InvoiceItem> Items { get; set; } = new List<InvoiceItem>();

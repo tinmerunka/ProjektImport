@@ -21,6 +21,9 @@ builder.Services.AddScoped<IJwtService, JwtService>();
 // Register Fiscalization Service (no HttpClient needed - creates its own)
 builder.Services.AddScoped<IFiscalizationService, FiscalizationService>();
 
+builder.Services.AddScoped<IQRCodeService, QRCodeService>();
+
+
 // Configure CORS
 builder.Services.AddCors(options =>
 {

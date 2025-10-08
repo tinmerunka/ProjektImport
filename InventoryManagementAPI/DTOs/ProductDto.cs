@@ -25,6 +25,8 @@ namespace InventoryManagementAPI.DTOs
 
         [Range(0, 100)]
         public decimal TaxRate { get; set; } = 25.00m;
+        [StringLength(100)]
+        public string? TaxReason { get; set; }
 
         [StringLength(20)]
         public string Unit { get; set; } = "kom";
@@ -56,6 +58,9 @@ namespace InventoryManagementAPI.DTOs
         [Range(0, 100)]
         public decimal TaxRate { get; set; } = 25.00m;
 
+        [StringLength(100)]
+        public string? TaxReason { get; set; }
+
         [StringLength(20)]
         public string Unit { get; set; } = "kom";
 
@@ -71,6 +76,7 @@ namespace InventoryManagementAPI.DTOs
         public int Quantity { get; set; }
         public string SKU { get; set; } = string.Empty;
         public decimal TaxRate { get; set; }
+        public string? TaxReason { get; set; } = string.Empty;
         public string Unit { get; set; } = string.Empty;
         public string? ImageUrl { get; set; } = string.Empty;
     }

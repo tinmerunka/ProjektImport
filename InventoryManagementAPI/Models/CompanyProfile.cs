@@ -55,6 +55,23 @@ namespace InventoryManagementAPI.Models
         public int UserId { get; set; }
         public User User { get; set; } = null!;
 
+        // Fiskalizacija
+        public bool FiscalizationEnabled { get; set; } = false;
+
+        [StringLength(500)]
+        public string? FiscalizationCertificatePath { get; set; }
+
+        [StringLength(500)]
+        public string? FiscalizationCertificatePassword { get; set; } // TODO: Enkriptirati!
+
+        [StringLength(11)]
+        public string? FiscalizationOib { get; set; }
+
+        [StringLength(11)]
+        public string? FiscalizationOperatorOib { get; set; }
+
+        public bool AutoFiscalize { get; set; } = true;
+
         public ICollection<Product> Products { get; set; }
         public ICollection<Customer> Customers { get; set; }
         public ICollection<Invoice> Invoices { get; set; }

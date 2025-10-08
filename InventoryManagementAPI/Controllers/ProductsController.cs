@@ -1,4 +1,5 @@
-﻿using InventoryManagementAPI.Data;
+﻿using InventoryManagementAPI.Constants;
+using InventoryManagementAPI.Data;
 using InventoryManagementAPI.DTOs;
 using InventoryManagementAPI.DTOs.InventoryManagementAPI.DTOs;
 using InventoryManagementAPI.Models;
@@ -219,6 +220,26 @@ namespace InventoryManagementAPI.Controllers
 
                 Console.WriteLine($"Using company ID: {companyProfile.Id}");
 
+                // Validacija PDV stope
+                if (!TaxRateConstants.IsValid(request.TaxRate))
+                {
+                    return BadRequest(new ApiResponse<ProductResponse>
+                    {
+                        Success = false,
+                        Message = "Neispravna PDV stopa. Dozvoljene stope u Hrvatskoj: 0%, 5%, 13%, 25%"
+                    });
+                }
+
+                // Ako je 0% PDV, razlog oslobođenja je obavezan
+                if (request.TaxRate == 0 && string.IsNullOrWhiteSpace(request.TaxReason))
+                {
+                    return BadRequest(new ApiResponse<ProductResponse>
+                    {
+                        Success = false,
+                        Message = "Za 0% PDV potrebno je navesti razlog oslobođenja"
+                    });
+                }
+
                 // Check if SKU already exists within the company
                 var existingProduct = await _context.Products
                     .AnyAsync(p => p.SKU == request.SKU && p.CompanyId == companyProfile.Id);
@@ -236,6 +257,8 @@ namespace InventoryManagementAPI.Controllers
 
                 Console.WriteLine($"Creating product: {request.Name}");
                 Console.WriteLine($"ImageUrl received: {request.ImageUrl}");
+                Console.WriteLine($"TaxRate: {request.TaxRate}%");
+                Console.WriteLine($"TaxExemptionReason: {request.TaxReason ?? "N/A"}");
 
                 var product = new Product
                 {
@@ -246,8 +269,9 @@ namespace InventoryManagementAPI.Controllers
                     SKU = request.SKU,
                     ImageUrl = request.ImageUrl,
                     TaxRate = request.TaxRate,
+                    TaxReason = request.TaxReason?.Trim(),
                     Unit = request.Unit,
-                    CompanyId = companyProfile.Id, // Use the verified company ID
+                    CompanyId = companyProfile.Id,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -269,6 +293,7 @@ namespace InventoryManagementAPI.Controllers
                     SKU = product.SKU,
                     ImageUrl = product.ImageUrl,
                     TaxRate = product.TaxRate,
+                    TaxReason = product.TaxReason,
                     Unit = product.Unit
                 };
 
@@ -325,6 +350,26 @@ namespace InventoryManagementAPI.Controllers
                     });
                 }
 
+                // Validacija PDV stope
+                if (!TaxRateConstants.IsValid(request.TaxRate))
+                {
+                    return BadRequest(new ApiResponse<ProductResponse>
+                    {
+                        Success = false,
+                        Message = "Neispravna PDV stopa. Dozvoljene stope u Hrvatskoj: 0%, 5%, 13%, 25%"
+                    });
+                }
+
+                // Ako je 0% PDV, razlog oslobođenja je obavezan
+                if (request.TaxRate == 0 && string.IsNullOrWhiteSpace(request.TaxReason))
+                {
+                    return BadRequest(new ApiResponse<ProductResponse>
+                    {
+                        Success = false,
+                        Message = "Za 0% PDV potrebno je navesti razlog oslobođenja"
+                    });
+                }
+
                 // Check if SKU already exists (excluding current product, within company)
                 if (await _context.Products.AnyAsync(p => p.SKU == request.SKU && p.Id != id && p.CompanyId == companyProfile.Id))
                 {
@@ -335,6 +380,7 @@ namespace InventoryManagementAPI.Controllers
                     });
                 }
 
+                // Update product fields
                 product.Name = request.Name;
                 product.Description = request.Description;
                 product.Price = request.Price;
@@ -342,9 +388,12 @@ namespace InventoryManagementAPI.Controllers
                 product.SKU = request.SKU;
                 product.ImageUrl = request.ImageUrl;
                 product.TaxRate = request.TaxRate;
+                product.TaxReason = request.TaxReason?.Trim();
                 product.Unit = request.Unit;
 
                 await _context.SaveChangesAsync();
+
+                Console.WriteLine($"Product {id} updated. TaxRate: {product.TaxRate}%, ExemptionReason: {product.TaxReason ?? "N/A"}");
 
                 var productResponse = new ProductResponse
                 {
@@ -356,13 +405,14 @@ namespace InventoryManagementAPI.Controllers
                     SKU = product.SKU,
                     ImageUrl = product.ImageUrl,
                     TaxRate = product.TaxRate,
+                    TaxReason = product.TaxReason,
                     Unit = product.Unit
                 };
 
                 return Ok(new ApiResponse<ProductResponse>
                 {
                     Success = true,
-                    Message = "Proizvod/usluga uspjesno ažurirana",
+                    Message = "Proizvod/usluga uspješno ažurirana",
                     Data = productResponse
                 });
             }
@@ -370,6 +420,7 @@ namespace InventoryManagementAPI.Controllers
             {
                 Console.WriteLine($"Error in UpdateProduct: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
                 return StatusCode(500, new ApiResponse<ProductResponse>
                 {
                     Success = false,

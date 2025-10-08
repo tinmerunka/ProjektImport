@@ -6,6 +6,7 @@ using InventoryManagementAPI.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace InventoryManagementAPI.Controllers
@@ -18,12 +19,14 @@ namespace InventoryManagementAPI.Controllers
         private readonly AppDbContext _context;
         private readonly IFiscalizationService _fiscalizationService;
         private readonly ILogger<InvoicesController> _logger;
+        private readonly IQRCodeService _qrCodeService;
 
-        public InvoicesController(AppDbContext context, IFiscalizationService fiscalizationService, ILogger<InvoicesController> logger) : base(context)
+        public InvoicesController(AppDbContext context, IFiscalizationService fiscalizationService, ILogger<InvoicesController> logger, IQRCodeService qrCodeService) : base(context)
         {
             _context = context;
             _fiscalizationService = fiscalizationService;
             _logger = logger;
+            _qrCodeService = qrCodeService;
         }
 
         // Helper method to generate PaymentMethodCode based on PaymentMethod
@@ -131,192 +134,6 @@ namespace InventoryManagementAPI.Controllers
             return Ok(debugInfo);
         }
 
-        // Test fiscalization endpoint
-        [HttpPost("{id}/fiscalize-test")]
-        public async Task<ActionResult<ApiResponse<FiscalizationResponse>>> TestFiscalizeInvoice(int id)
-        {
-            using var transaction = await _context.Database.BeginTransactionAsync();
-
-            try
-            {
-                _logger.LogInformation($"Starting test fiscalization for invoice ID: {id}");
-
-                var companyId = GetSelectedCompanyId();
-                if (!companyId.HasValue)
-                {
-                    return BadRequest(new ApiResponse<FiscalizationResponse>
-                    {
-                        Success = false,
-                        Message = "No company selected"
-                    });
-                }
-
-                // Get invoice with company validation
-                var invoice = await _context.Invoices
-                    .Include(i => i.Items)
-                    .Where(i => i.Id == id && i.CompanyId == companyId.Value)
-                    .FirstOrDefaultAsync();
-
-                if (invoice == null)
-                {
-                    return NotFound(new ApiResponse<FiscalizationResponse>
-                    {
-                        Success = false,
-                        Message = "Invoice not found"
-                    });
-                }
-
-                if (invoice.Fiscalized)
-                {
-                    return BadRequest(new ApiResponse<FiscalizationResponse>
-                    {
-                        Success = false,
-                        Message = "Invoice is already fiscalized"
-                    });
-                }
-
-                // Get company profile
-                var company = await _context.CompanyProfiles
-                    .Where(c => c.Id == companyId.Value)
-                    .FirstOrDefaultAsync();
-
-                if (company == null)
-                {
-                    return BadRequest(new ApiResponse<FiscalizationResponse>
-                    {
-                        Success = false,
-                        Message = "Company profile not found"
-                    });
-                }
-
-                _logger.LogInformation($"Fiscalizing invoice {invoice.InvoiceNumber} for company {company.CompanyName}");
-
-                // Generate ZKI first
-                var zki = _fiscalizationService.GenerateZki(invoice, company);
-                _logger.LogInformation($"Generated ZKI: {zki}");
-
-                // Update invoice with ZKI before fiscalization attempt
-                invoice.Zki = zki;
-                invoice.UpdatedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-
-                // Attempt fiscalization
-                var fiscalizationResult = await _fiscalizationService.FiscalizeInvoiceAsync(invoice, company);
-
-                _logger.LogInformation($"Fiscalization result: Success={fiscalizationResult.Success}, Message={fiscalizationResult.Message}");
-
-                // Update invoice with fiscalization results
-                if (fiscalizationResult.Success && !string.IsNullOrEmpty(fiscalizationResult.Jir))
-                {
-                    invoice.Jir = fiscalizationResult.Jir;
-                    invoice.Fiscalized = true;
-                    invoice.FiscalizedAt = fiscalizationResult.FiscalizedAt ?? DateTime.UtcNow;
-                    invoice.FiscalisationMessage = "Successfully fiscalized via test endpoint";
-
-                    _logger.LogInformation($"Invoice successfully fiscalized with JIR: {fiscalizationResult.Jir}");
-                }
-                else
-                {
-                    invoice.FiscalisationMessage = $"Fiscalization failed: {fiscalizationResult.Message}";
-                    _logger.LogWarning($"Fiscalization failed: {fiscalizationResult.Message}");
-                }
-
-                invoice.UpdatedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                // Include the ZKI in response
-                fiscalizationResult.Zki = zki;
-
-                return Ok(new ApiResponse<FiscalizationResponse>
-                {
-                    Success = fiscalizationResult.Success,
-                    Message = fiscalizationResult.Success
-                        ? "Invoice fiscalization completed successfully"
-                        : $"Invoice fiscalization failed: {fiscalizationResult.Message}",
-                    Data = fiscalizationResult
-                });
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, $"Error during test fiscalization of invoice {id}");
-
-                return StatusCode(500, new ApiResponse<FiscalizationResponse>
-                {
-                    Success = false,
-                    Message = $"An error occurred during fiscalization: {ex.Message}",
-                    Data = new FiscalizationResponse
-                    {
-                        Success = false,
-                        Message = ex.Message
-                    }
-                });
-            }
-        }
-
-        // Generate ZKI only endpoint for testing
-        [HttpPost("{id}/generate-zki")]
-        public async Task<ActionResult<ApiResponse<string>>> GenerateZkiOnly(int id)
-        {
-            try
-            {
-                var companyId = GetSelectedCompanyId();
-                if (!companyId.HasValue)
-                {
-                    return BadRequest(new ApiResponse<string>
-                    {
-                        Success = false,
-                        Message = "No company selected"
-                    });
-                }
-
-                var invoice = await _context.Invoices
-                    .Where(i => i.Id == id && i.CompanyId == companyId.Value)
-                    .FirstOrDefaultAsync();
-
-                if (invoice == null)
-                {
-                    return NotFound(new ApiResponse<string>
-                    {
-                        Success = false,
-                        Message = "Invoice not found"
-                    });
-                }
-
-                var company = await _context.CompanyProfiles
-                    .Where(c => c.Id == companyId.Value)
-                    .FirstOrDefaultAsync();
-
-                if (company == null)
-                {
-                    return BadRequest(new ApiResponse<string>
-                    {
-                        Success = false,
-                        Message = "Company profile not found"
-                    });
-                }
-
-                var zki = _fiscalizationService.GenerateZki(invoice, company);
-
-                return Ok(new ApiResponse<string>
-                {
-                    Success = true,
-                    Message = "ZKI generated successfully",
-                    Data = zki
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error generating ZKI for invoice {id}");
-                return StatusCode(500, new ApiResponse<string>
-                {
-                    Success = false,
-                    Message = $"Error generating ZKI: {ex.Message}"
-                });
-            }
-        }
-
         [HttpGet]
         public async Task<ActionResult<ApiResponse<InvoiceListResponse>>> GetInvoices(
     [FromQuery] int page = 1,
@@ -374,7 +191,6 @@ namespace InventoryManagementAPI.Controllers
                         PaymentMethod = i.PaymentMethod,
                         PaymentMethodCode = i.PaymentMethodCode,
                         Notes = i.Notes,
-                        Fiscalized = i.Fiscalized,
                         Jir = i.Jir
                     })
                     .ToListAsync();
@@ -465,9 +281,9 @@ namespace InventoryManagementAPI.Controllers
                     UpdatedAt = invoice.UpdatedAt,
                     Zki = invoice.Zki,
                     Jir = invoice.Jir,
-                    Fiscalized = invoice.Fiscalized,
+                    FiscalizationStatus = invoice.FiscalizationStatus,
                     FiscalizedAt = invoice.FiscalizedAt,
-                    FiscalisationMessage = invoice.FiscalisationMessage,
+                    FiscalizationError = invoice.FiscalizationError,
                     Items = invoice.Items.Select(item => new InvoiceItemResponse
                     {
                         Id = item.Id,
@@ -684,12 +500,14 @@ namespace InventoryManagementAPI.Controllers
                     CreatedAt = currentDateTime,
                     Status = InvoiceStatus.Draft,
                     PaidAmount = 0, // Initialize to 0
-                    Fiscalized = false,
+                    FiscalizationStatus = "",
                     FiscalizedAt = null,
                     Zki = null,
                     Jir = null,
-                    FiscalisationMessage = null
+                    FiscalizationError = null
                 };
+
+                await AddTaxExemptionSummary(invoice);
 
                 _context.Invoices.Add(invoice);
                 await _context.SaveChangesAsync();
@@ -811,9 +629,9 @@ namespace InventoryManagementAPI.Controllers
                     UpdatedAt = createdInvoice.UpdatedAt,
                     Zki = createdInvoice.Zki,
                     Jir = createdInvoice.Jir,
-                    Fiscalized = createdInvoice.Fiscalized,
+                    FiscalizationStatus = createdInvoice.FiscalizationStatus,
                     FiscalizedAt = createdInvoice.FiscalizedAt,
-                    FiscalisationMessage = createdInvoice.FiscalisationMessage,
+                    FiscalizationError = createdInvoice.FiscalizationError,
                     Items = createdInvoice.Items.Select(item => new InvoiceItemResponse
                     {
                         Id = item.Id,
@@ -854,6 +672,43 @@ namespace InventoryManagementAPI.Controllers
                 });
             }
         }
+
+        private async Task AddTaxExemptionSummary(Invoice invoice)
+        {
+            var zeroTaxItems = invoice.Items.Where(i => i.TaxRate == 0).ToList();
+
+            if (!zeroTaxItems.Any())
+                return;
+
+            var exemptionLines = new List<string>();
+            exemptionLines.Add("=== RAZLOZI OSLOBOĐENJA PDV-a ===");
+            exemptionLines.Add("");
+
+            foreach (var item in zeroTaxItems)
+            {
+                var product = await _context.Products.FindAsync(item.ProductId);
+
+                if (product != null)
+                {
+                    var reason = !string.IsNullOrWhiteSpace(product.TaxReason)
+                        ? product.TaxReason
+                        : "Razlog nije naveden";
+
+                    exemptionLines.Add($"• {item.ProductName}");
+                    exemptionLines.Add($"  {reason}");
+                    exemptionLines.Add("");
+                }
+            }
+
+            invoice.TaxExemptionSummary = string.Join("\n", exemptionLines);
+
+            // Dodaj i u Notes za ispis
+            var notesPrefix = string.Join("\n", exemptionLines);
+            invoice.Notes = string.IsNullOrEmpty(invoice.Notes)
+                ? notesPrefix
+                : $"{notesPrefix}\n---\n\n{invoice.Notes}";
+        }
+
         [HttpPut("{id}")]
         public async Task<ActionResult<ApiResponse<InvoiceResponse>>> UpdateInvoice(int id, CreateInvoiceRequest request)
         {
@@ -1136,9 +991,9 @@ namespace InventoryManagementAPI.Controllers
                     UpdatedAt = updatedInvoice.UpdatedAt,
                     Zki = updatedInvoice.Zki,
                     Jir = updatedInvoice.Jir,
-                    Fiscalized = updatedInvoice.Fiscalized,
+                    FiscalizationStatus = updatedInvoice.FiscalizationStatus,
                     FiscalizedAt = updatedInvoice.FiscalizedAt,
-                    FiscalisationMessage = updatedInvoice.FiscalisationMessage,
+                    FiscalizationError = updatedInvoice.FiscalizationError,
                     Items = updatedInvoice.Items.Select(item => new InvoiceItemResponse
                     {
                         Id = item.Id,
@@ -1213,83 +1068,177 @@ namespace InventoryManagementAPI.Controllers
             }
         }
 
-        [HttpPut("{id}/fiscalize")]
-        public async Task<ActionResult<ApiResponse<InvoiceResponse>>> FiscalizeInvoice(int id, FiscalizeInvoiceRequest request)
+        /// Fiskaliziraj postojeći račun
+        [HttpPost("{id}/fiscalize")]
+        public async Task<IActionResult> FiscalizeInvoice(int id)
         {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var invoice = await _context.Invoices
+                .Include(i => i.Items)
+                .Include(i => i.Company)
+                .FirstOrDefaultAsync(i => i.Id == id && i.Company.UserId.ToString() == userId);
+
+            if (invoice == null)
+                return NotFound();
+
+            if (!invoice.Company.FiscalizationEnabled)
+                return BadRequest("Fiscalization not enabled for this company");
+
+            if (invoice.FiscalizationStatus == "fiscalized")
+                return BadRequest("Invoice already fiscalized");
+
             try
             {
-                var companyId = GetSelectedCompanyId();
-                if (!companyId.HasValue)
+                invoice.FiscalizationStatus = "pending";
+                await _context.SaveChangesAsync();
+
+                var result = await _fiscalizationService.FiscalizeInvoiceAsync(invoice, invoice.Company);
+
+                if (result.Success)
                 {
-                    return BadRequest(new ApiResponse<InvoiceResponse>
-                    {
-                        Success = false,
-                        Message = "No company selected"
-                    });
+                    invoice.FiscalizationStatus = "fiscalized";
+                    invoice.Jir = result.Jir;
+                    invoice.Zki = result.Zki;
+                    invoice.FiscalizedAt = result.FiscalizedAt;
+                    invoice.FiscalizationError = null;
                 }
-
-                var invoice = await _context.Invoices
-                    .Where(i => i.Id == id && i.CompanyId == companyId.Value)
-                    .FirstOrDefaultAsync();
-
-                if (invoice == null)
+                else
                 {
-                    return NotFound(new ApiResponse<InvoiceResponse>
-                    {
-                        Success = false,
-                        Message = "Invoice not found"
-                    });
+                    invoice.FiscalizationStatus = "failed";
+                    invoice.FiscalizationError = result.Message;
                 }
-
-                if (invoice.Fiscalized)
-                {
-                    return BadRequest(new ApiResponse<InvoiceResponse>
-                    {
-                        Success = false,
-                        Message = "Invoice is already fiscalized"
-                    });
-                }
-
-                // Update fiscalization fields
-                invoice.Zki = request.Zki;
-                invoice.Jir = request.Jir;
-                invoice.Fiscalized = true;
-                invoice.FiscalizedAt = DateTime.UtcNow;
-                invoice.FiscalisationMessage = request.FiscalisationMessage;
-                invoice.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
 
-                // Return updated invoice
-                var response = new InvoiceResponse
+                return Ok(new
                 {
-                    Id = invoice.Id,
-                    InvoiceNumber = invoice.InvoiceNumber,
-                    Type = invoice.Type,
-                    Status = invoice.Status,
-                    Zki = invoice.Zki,
-                    Jir = invoice.Jir,
-                    Fiscalized = invoice.Fiscalized,
-                    FiscalizedAt = invoice.FiscalizedAt,
-                    FiscalisationMessage = invoice.FiscalisationMessage,
-                    UpdatedAt = invoice.UpdatedAt
-                    // Add other necessary fields...
-                };
-
-                return Ok(new ApiResponse<InvoiceResponse>
-                {
-                    Success = true,
-                    Message = "Invoice fiscalized successfully",
-                    Data = response
+                    success = result.Success,
+                    message = result.Message,
+                    jir = result.Jir,
+                    zki = result.Zki,
+                    fiscalizedAt = result.FiscalizedAt
                 });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new ApiResponse<InvoiceResponse>
+                _logger.LogError(ex, "Error fiscalizing invoice {InvoiceId}", id);
+
+                invoice.FiscalizationStatus = "failed";
+                invoice.FiscalizationError = ex.Message;
+                await _context.SaveChangesAsync();
+
+                return StatusCode(500, new { success = false, message = ex.Message });
+            }
+        }
+
+        /// Finaliziraj račun (i opciono fiskaliziraj)
+        [HttpPost("{id}/finalize")]
+        public async Task<IActionResult> FinalizeInvoice(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var invoice = await _context.Invoices
+                .Include(i => i.Items)
+                .Include(i => i.Company)
+                .FirstOrDefaultAsync(i => i.Id == id && i.Company.UserId.ToString() == userId);
+
+            if (invoice == null)
+                return NotFound();
+
+            if (invoice.Status == InvoiceStatus.Finalized)
+                return BadRequest("Invoice already finalized");
+
+            invoice.Status = InvoiceStatus.Finalized;
+
+            // Automatska fiskalizacija ako je omogućena
+            if (invoice.Company.FiscalizationEnabled &&
+                invoice.Company.AutoFiscalize &&
+                !string.IsNullOrEmpty(invoice.Company.FiscalizationCertificatePath))
+            {
+                try
                 {
-                    Success = false,
-                    Message = "An error occurred while fiscalizing invoice"
-                });
+                    invoice.FiscalizationStatus = "pending";
+                    await _context.SaveChangesAsync();
+
+                    var result = await _fiscalizationService.FiscalizeInvoiceAsync(invoice, invoice.Company);
+
+                    if (result.Success)
+                    {
+                        invoice.FiscalizationStatus = "fiscalized";
+                        invoice.Jir = result.Jir;
+                        invoice.Zki = result.Zki;
+                        invoice.FiscalizedAt = result.FiscalizedAt;
+                        invoice.FiscalizationError = null;
+                    }
+                    else
+                    {
+                        invoice.FiscalizationStatus = "failed";
+                        invoice.FiscalizationError = result.Message;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error auto-fiscalizing invoice {InvoiceId}", id);
+                    invoice.FiscalizationStatus = "failed";
+                    invoice.FiscalizationError = ex.Message;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(invoice);
+        }
+
+        /// Get QR kod za fiskalizirani račun
+        [HttpGet("{id}/qr-code")]
+        public async Task<IActionResult> GetInvoiceQRCode(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var invoice = await _context.Invoices
+                .FirstOrDefaultAsync(i => i.Id == id && i.Company.UserId.ToString() == userId);
+
+            if (invoice == null)
+                return NotFound();
+
+            if (string.IsNullOrEmpty(invoice.Jir))
+                return BadRequest("Invoice is not fiscalized");
+
+            try
+            {
+                var qrBytes = _qrCodeService.GenerateFiscalQRCode(invoice.Jir);
+                return File(qrBytes, "image/png");
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Error generating QR code: {ex.Message}" });
+            }
+        }
+
+        /// Get QR kod kao Base64 string
+        [HttpGet("{id}/qr-code-base64")]
+        public async Task<IActionResult> GetInvoiceQRCodeBase64(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var invoice = await _context.Invoices
+                .FirstOrDefaultAsync(i => i.Id == id && i.Company.UserId.ToString() == userId);
+
+            if (invoice == null)
+                return NotFound();
+
+            if (string.IsNullOrEmpty(invoice.Jir))
+                return BadRequest("Invoice is not fiscalized");
+
+            try
+            {
+                var qrBase64 = _qrCodeService.GenerateFiscalQRCodeBase64(invoice.Jir);
+                return Ok(new { qrCode = $"data:image/png;base64,{qrBase64}" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Error generating QR code: {ex.Message}" });
             }
         }
 
