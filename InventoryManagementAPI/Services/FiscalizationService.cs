@@ -121,6 +121,13 @@ namespace InventoryManagementAPI.Services
             // Log certificate subject za debugging
             _logger.LogInformation("Certificate Subject: {Subject}", certificate.Subject);
 
+            // Također logiraj certificate Organization da vidimo sve OIB-ove
+            var subjectParts = certificate.Subject.Split(',');
+            foreach (var part in subjectParts)
+            {
+                _logger.LogInformation("Certificate Subject Part: {Part}", part.Trim());
+            }
+
             // Prioritet: Company.FiscalizationOib > Config > Certifikat
             if (company != null && !string.IsNullOrEmpty(company.FiscalizationOib))
             {
@@ -132,13 +139,23 @@ namespace InventoryManagementAPI.Services
             if (!string.IsNullOrEmpty(configOib))
             {
                 _logger.LogInformation("Using issuer OIB from config: {Oib}", configOib);
-                return configOib;
+
+                // VAŽNO: Provjeri da li config OIB odgovara certifikatu
+                if (IsOibInCertificate(certificate, configOib))
+                {
+                    _logger.LogInformation("Config OIB {Oib} matches certificate", configOib);
+                    return configOib;
+                }
+                else
+                {
+                    _logger.LogWarning("Config OIB {Oib} does NOT match certificate! Will try to extract from certificate.", configOib);
+                }
             }
 
             // Pokušaj izvući iz Subject-a certifikata
             var subject = certificate.Subject;
 
-            // Različiti formati u kojima može biti OIB:
+            // UVIJEK prvo pokušaj izvući iz certifikata (najsigurniji način)
             // 1. HR12345678901
             var match = System.Text.RegularExpressions.Regex.Match(subject, @"HR(\d{11})");
             if (match.Success)
@@ -166,8 +183,38 @@ namespace InventoryManagementAPI.Services
                 return oib;
             }
 
+            // FALLBACK: Company profile
+            if (company != null && !string.IsNullOrEmpty(company.FiscalizationOib))
+            {
+                _logger.LogWarning("Could not extract OIB from certificate or config, using company OIB: {Oib}", company.FiscalizationOib);
+                return company.FiscalizationOib;
+            }
             _logger.LogError("Could not extract OIB from certificate! Subject: {Subject}", subject);
             throw new InvalidOperationException($"Could not extract OIB from certificate. Subject: {subject}");
+        }
+
+        // Dodaj helper metodu za provjeru
+        private bool IsOibInCertificate(X509Certificate2 certificate, string oibToCheck)
+        {
+            var subject = certificate.Subject;
+
+            // Provjeri sve moguće formate
+            var patterns = new[]
+            {
+        $@"HR{oibToCheck}",
+        $@"VATHR-{oibToCheck}",
+        $@"O=.*?{oibToCheck}"
+    };
+
+            foreach (var pattern in patterns)
+            {
+                if (System.Text.RegularExpressions.Regex.IsMatch(subject, pattern))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private string ExtractInvoiceNumber(string fullInvoiceNumber)

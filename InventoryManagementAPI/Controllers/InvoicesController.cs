@@ -191,7 +191,8 @@ namespace InventoryManagementAPI.Controllers
                         PaymentMethod = i.PaymentMethod,
                         PaymentMethodCode = i.PaymentMethodCode,
                         Notes = i.Notes,
-                        Jir = i.Jir
+                        Jir = i.Jir,
+                        Fiscalized = i.FiscalizationStatus == "fiscalized" // Add this line
                     })
                     .ToListAsync();
 
