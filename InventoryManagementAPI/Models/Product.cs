@@ -22,22 +22,26 @@ namespace InventoryManagementAPI.Models
         [StringLength(50)]
         public string SKU { get; set; } = string.Empty;
 
+        // Add this new property
+        [StringLength(20)]
+        public string KpdCode { get; set; } = string.Empty; // Croatian fiscal code
+
         // New fields for invoicing
         [Column(TypeName = "decimal(5,2)")]
         public decimal TaxRate { get; set; } = 25.00m; // Default 25% PDV
 
         [StringLength(100)]
-        public string? TaxReason { get; set; } 
+        public string? TaxReason { get; set; }
 
         [StringLength(20)]
         public string Unit { get; set; } = "kom"; // kom, kg, m², lit, etc.
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        public string? ImageUrl { get; set; } 
+        public string? ImageUrl { get; set; }
 
         // Navigation properties
         public ICollection<InvoiceItem> InvoiceItems { get; set; } = new List<InvoiceItem>();
-        public int CompanyId { get; set; } 
+        public int CompanyId { get; set; }
         public CompanyProfile Company { get; set; }
     }
 }

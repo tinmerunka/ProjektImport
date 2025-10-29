@@ -47,6 +47,17 @@ namespace InventoryManagementAPI.DTOs
 
         [Range(0, 100)]
         public decimal? OverrideTaxRate { get; set; }
+
+        // New discount field
+        [Range(0, 100)]
+        public decimal? DiscountPercentage { get; set; }
+
+        // New override fields for product details
+        [StringLength(200)]
+        public string? OverrideProductName { get; set; }
+
+        [StringLength(500)]
+        public string? OverrideProductDescription { get; set; }
     }
 
     public class InvoiceResponse
@@ -104,9 +115,12 @@ namespace InventoryManagementAPI.DTOs
         public int ProductId { get; set; }
         public string ProductName { get; set; } = string.Empty;
         public string ProductSku { get; set; } = string.Empty;
+        public string ProductKpdCode { get; set; } = string.Empty; // Add this
         public string? ProductDescription { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal Quantity { get; set; }
+        public decimal DiscountPercentage { get; set; } // Add this
+        public decimal DiscountAmount { get; set; } // Add this
         public decimal TaxRate { get; set; }
         public decimal LineTotal { get; set; }
         public decimal LineTaxAmount { get; set; }

@@ -129,6 +129,9 @@ namespace InventoryManagementAPI.Models
         [StringLength(50)]
         public string ProductSku { get; set; } = string.Empty;
 
+        [StringLength(20)]
+        public string ProductKpdCode { get; set; } = string.Empty; // Snapshot of KPD code
+
         [StringLength(500)]
         public string? ProductDescription { get; set; }
 
@@ -138,11 +141,18 @@ namespace InventoryManagementAPI.Models
         [Column(TypeName = "decimal(18,3)")]
         public decimal Quantity { get; set; }
 
+        // Discount fields
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal DiscountPercentage { get; set; } = 0; // 0-100%
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal DiscountAmount { get; set; } = 0; // Calculated discount amount
+
         [Column(TypeName = "decimal(5,2)")]
         public decimal TaxRate { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal LineTotal { get; set; }
+        public decimal LineTotal { get; set; } // After discount
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal LineTaxAmount { get; set; }

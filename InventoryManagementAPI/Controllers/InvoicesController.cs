@@ -291,9 +291,12 @@ namespace InventoryManagementAPI.Controllers
                         ProductId = item.ProductId,
                         ProductName = item.ProductName,
                         ProductSku = item.ProductSku,
+                        ProductKpdCode = item.ProductKpdCode,
                         ProductDescription = item.ProductDescription,
                         UnitPrice = item.UnitPrice,
                         Quantity = item.Quantity,
+                        DiscountPercentage = item.DiscountPercentage,
+                        DiscountAmount = item.DiscountAmount,
                         TaxRate = item.TaxRate,
                         LineTotal = item.LineTotal,
                         LineTaxAmount = item.LineTaxAmount,
@@ -556,20 +559,37 @@ namespace InventoryManagementAPI.Controllers
                         }
                     }
 
+                    // Use override values if provided, otherwise use product values
+                    var productName = !string.IsNullOrEmpty(itemRequest.OverrideProductName)
+                        ? itemRequest.OverrideProductName
+                        : product.Name;
+
+                    var productDescription = !string.IsNullOrEmpty(itemRequest.OverrideProductDescription)
+                        ? itemRequest.OverrideProductDescription
+                        : product.Description;
+
                     var unitPrice = itemRequest.OverridePrice ?? product.Price;
                     var taxRate = itemRequest.OverrideTaxRate ?? product.TaxRate;
-                    var lineTotal = unitPrice * itemRequest.Quantity;
+                    var discountPercentage = itemRequest.DiscountPercentage ?? 0;
+
+                    // Calculate amounts
+                    var baseAmount = unitPrice * itemRequest.Quantity;
+                    var discountAmount = baseAmount * (discountPercentage / 100);
+                    var lineTotal = baseAmount - discountAmount;
                     var lineTaxAmount = lineTotal * (taxRate / 100);
 
                     var invoiceItem = new InvoiceItem
                     {
                         InvoiceId = invoice.Id,
                         ProductId = product.Id,
-                        ProductName = product.Name,
+                        ProductName = productName, // Can be overridden
                         ProductSku = product.SKU,
-                        ProductDescription = product.Description,
+                        ProductKpdCode = product.KpdCode, // Snapshot of KPD code
+                        ProductDescription = productDescription, // Can be overridden
                         UnitPrice = unitPrice,
                         Quantity = itemRequest.Quantity,
+                        DiscountPercentage = discountPercentage,
+                        DiscountAmount = discountAmount,
                         TaxRate = taxRate,
                         LineTotal = lineTotal,
                         LineTaxAmount = lineTaxAmount,
@@ -578,7 +598,7 @@ namespace InventoryManagementAPI.Controllers
 
                     _context.InvoiceItems.Add(invoiceItem);
 
-                    subTotal += lineTotal;
+                    subTotal += lineTotal; // This now includes discount
                     totalTaxAmount += lineTaxAmount;
                 }
 
@@ -642,6 +662,9 @@ namespace InventoryManagementAPI.Controllers
                         ProductDescription = item.ProductDescription,
                         UnitPrice = item.UnitPrice,
                         Quantity = item.Quantity,
+                        ProductKpdCode = item.ProductKpdCode,
+                        DiscountPercentage = item.DiscountPercentage,
+                        DiscountAmount = item.DiscountAmount,
                         TaxRate = item.TaxRate,
                         LineTotal = item.LineTotal,
                         LineTaxAmount = item.LineTaxAmount,
@@ -920,20 +943,37 @@ namespace InventoryManagementAPI.Controllers
                         });
                     }
 
+                    // Use override values if provided, otherwise use product values
+                    var productName = !string.IsNullOrEmpty(itemRequest.OverrideProductName)
+                        ? itemRequest.OverrideProductName
+                        : product.Name;
+
+                    var productDescription = !string.IsNullOrEmpty(itemRequest.OverrideProductDescription)
+                        ? itemRequest.OverrideProductDescription
+                        : product.Description;
+
                     var unitPrice = itemRequest.OverridePrice ?? product.Price;
                     var taxRate = itemRequest.OverrideTaxRate ?? product.TaxRate;
-                    var lineTotal = unitPrice * itemRequest.Quantity;
+                    var discountPercentage = itemRequest.DiscountPercentage ?? 0;
+
+                    // Calculate amounts
+                    var baseAmount = unitPrice * itemRequest.Quantity;
+                    var discountAmount = baseAmount * (discountPercentage / 100);
+                    var lineTotal = baseAmount - discountAmount;
                     var lineTaxAmount = lineTotal * (taxRate / 100);
 
                     var invoiceItem = new InvoiceItem
                     {
                         InvoiceId = invoice.Id,
                         ProductId = product.Id,
-                        ProductName = product.Name,
+                        ProductName = productName, // Can be overridden
                         ProductSku = product.SKU,
-                        ProductDescription = product.Description,
+                        ProductKpdCode = product.KpdCode, // Snapshot of KPD code
+                        ProductDescription = productDescription, // Can be overridden
                         UnitPrice = unitPrice,
                         Quantity = itemRequest.Quantity,
+                        DiscountPercentage = discountPercentage,
+                        DiscountAmount = discountAmount,
                         TaxRate = taxRate,
                         LineTotal = lineTotal,
                         LineTaxAmount = lineTaxAmount,
@@ -942,7 +982,7 @@ namespace InventoryManagementAPI.Controllers
 
                     _context.InvoiceItems.Add(invoiceItem);
 
-                    subTotal += lineTotal;
+                    subTotal += lineTotal; // This now includes discount
                     totalTaxAmount += lineTaxAmount;
                 }
 
@@ -1001,9 +1041,12 @@ namespace InventoryManagementAPI.Controllers
                         ProductId = item.ProductId,
                         ProductName = item.ProductName,
                         ProductSku = item.ProductSku,
+                        ProductKpdCode = item.ProductKpdCode,
                         ProductDescription = item.ProductDescription,
                         UnitPrice = item.UnitPrice,
                         Quantity = item.Quantity,
+                        DiscountAmount = item.DiscountAmount,
+                        DiscountPercentage = item.DiscountPercentage,
                         TaxRate = item.TaxRate,
                         LineTotal = item.LineTotal,
                         LineTaxAmount = item.LineTaxAmount,

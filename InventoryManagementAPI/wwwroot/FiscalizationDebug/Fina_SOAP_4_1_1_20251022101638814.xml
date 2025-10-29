@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <tns:RacunZahtjev xmlns:tns="http://www.apis-it.hr/fin/2012/types/f73" Id="signXmlId">
+  <tns:Zaglavlje>
+    <tns:IdPoruke>8ef70d02-3f88-48c6-8adc-b95e37d855c0</tns:IdPoruke>
+    <tns:DatumVrijeme>22.10.2025T10:16:38</tns:DatumVrijeme>
+  </tns:Zaglavlje>
+  <tns:Racun>
+    <tns:Oib>79830143058</tns:Oib>
+    <tns:USustPdv>true</tns:USustPdv>
+    <tns:DatVrijeme>15.10.2025T11:05:00</tns:DatVrijeme>
+    <tns:OznSlijed>P</tns:OznSlijed>
+    <tns:BrRac>
+      <tns:BrOznRac>4</tns:BrOznRac>
+      <tns:OznPosPr>1</tns:OznPosPr>
+      <tns:OznNapUr>1</tns:OznNapUr>
+    </tns:BrRac>
+    <tns:Pdv>
+      <tns:Porez>
+        <tns:Stopa>25.00</tns:Stopa>
+        <tns:Osnovica>450.00</tns:Osnovica>
+        <tns:Iznos>150.00</tns:Iznos>
+      </tns:Porez>
+    </tns:Pdv>
+    <tns:IznosUkupno>750.00</tns:IznosUkupno>
+    <tns:NacinPlac>T</tns:NacinPlac>
+    <tns:OibOper>79830143058</tns:OibOper>
+    <tns:ZastKod>5d915f69ee6438f42f9e8ffe3bb65f31</tns:ZastKod>
+    <tns:NakDost>false</tns:NakDost>
+  </tns:Racun>
+<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" /><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1" /><Reference URI="#signXmlId"><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /><Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" /></Transforms><DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1" /><DigestValue>x1lN2q8PRjBvgJTZYQ1T8zdsoSA=</DigestValue></Reference></SignedInfo><SignatureValue>PP+3bbvbHw8qj4YnNWnqGNZ4MCyWVmxVbwDWs/o+KjqSv9J8ATQOOxHKfPG9Hy9NLbjHSbDLm0u3eEErWlX3UEIAn5rk8+V6eXDP5c3pLwcyptMpa5OD52qU8ckAy2xXY1VSfMiZqgyQljXoma7a7Dy6DHLSTGdVUv+Rk1tNO8iZtdPW2+QSzp9tVqcw/fJ3eLEjSrhMRngN0Dpv6ZUegYj0sgC7wYiASe0Cf9LX4HEEthMWEzbPDF/ZFRrP3gLM24MBQW9NVSAbVAaZs1rXur2lDGAXzRf03+E6wcj71Ix/bcTW2E6BljoxgR/ljfRW6X41uX8Id4xa4POUOsqjmQ==</SignatureValue><KeyInfo><X509Data><X509Certificate>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</X509Certificate></X509Data></KeyInfo></Signature></tns:RacunZahtjev>
+  </soapenv:Body>
+</soapenv:Envelope>
