@@ -91,43 +91,8 @@ namespace InventoryManagementAPI.Controllers
                 await _context.SaveChangesAsync(); // This will generate the user ID
                 Console.WriteLine($"User saved with ID: {user.Id}");
 
-                // Create default company for the user
-                var defaultCompany = new CompanyProfile
-                {
-                    CompanyName = string.IsNullOrWhiteSpace(request.CompanyName) ? $"{request.Username}'s Company" : request.CompanyName,
-                    Address = request.CompanyAddress ?? string.Empty,
-                    Oib = request.CompanyOib ?? string.Empty,
-                    Email = string.Empty,
-                    Phone = string.Empty,
-                    BankAccount = string.Empty, // This was missing and might be required
-                    Website = string.Empty,
-                    InvoiceParam1 = "2025", // Default first parameter (could be year)
-                    InvoiceParam2 = "001",  // Default second parameter (could be sequence)
-                    OfferParam1 = "2025",   // Default first parameter for offers
-                    OfferParam2 = "001",    // Default second parameter for offers
-                    LastInvoiceNumber = 0,
-                    LastOfferNumber = 0,
-                    DefaultTaxRate = 25.0m,
-                    UserId = user.Id
-                };
-
-                Console.WriteLine($"Adding company to context with UserId: {defaultCompany.UserId}...");
-                _context.CompanyProfiles.Add(defaultCompany);
-
-                try
-                {
-                    await _context.SaveChangesAsync(); // Save the company
-                    Console.WriteLine($"Company saved with ID: {defaultCompany.Id}");
-                }
-                catch (Exception companyEx)
-                {
-                    Console.WriteLine($"Company save error: {companyEx.Message}");
-                    Console.WriteLine($"Inner exception: {companyEx.InnerException?.Message}");
-                    throw;
-                }
-
                 // Generate JWT token with the new company
-                var token = _jwtService.GenerateToken(user, defaultCompany.Id);
+                var token = _jwtService.GenerateToken(user);
 
                 var authResponse = new AuthResponse
                 {

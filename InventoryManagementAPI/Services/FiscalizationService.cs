@@ -97,23 +97,38 @@ namespace InventoryManagementAPI.Services
             if (string.IsNullOrEmpty(company.FiscalizationCertificatePath))
                 throw new InvalidOperationException("Certificate path not configured in company profile");
 
-            if (string.IsNullOrEmpty(company.FiscalizationCertificatePassword))
-                throw new InvalidOperationException("Certificate password not configured in company profile");
-
             var fullPath = Path.Combine(_environment.WebRootPath, company.FiscalizationCertificatePath);
 
             if (!File.Exists(fullPath))
                 throw new FileNotFoundException($"Certificate not found: {fullPath}");
 
-            var cert = new X509Certificate2(fullPath, company.FiscalizationCertificatePassword, X509KeyStorageFlags.Exportable);
+            _logger.LogInformation("Attempting to load certificate from: {Path}", fullPath);
 
-            if (!cert.HasPrivateKey)
-                throw new InvalidOperationException("Certificate does not have a private key!");
+            // Use empty string if password is null
+            var password = company.FiscalizationCertificatePassword ?? string.Empty;
 
-            _logger.LogInformation("Certificate loaded: Subject={Subject}, HasPrivateKey={HasPrivateKey}, NotAfter={NotAfter}",
-                cert.Subject, cert.HasPrivateKey, cert.NotAfter);
+            _logger.LogInformation("Using password: {HasPassword}", !string.IsNullOrEmpty(password) ? "Yes" : "No (empty)");
 
-            return cert;
+            try
+            {
+                var cert = new X509Certificate2(fullPath, password, X509KeyStorageFlags.Exportable);
+
+                if (!cert.HasPrivateKey)
+                    throw new InvalidOperationException("Certificate does not have a private key!");
+
+                _logger.LogInformation("Certificate loaded successfully: Subject={Subject}, HasPrivateKey={HasPrivateKey}, NotAfter={NotAfter}",
+                    cert.Subject, cert.HasPrivateKey, cert.NotAfter);
+
+                return cert;
+            }
+            catch (CryptographicException ex)
+            {
+                _logger.LogError(ex, "Failed to load certificate. Password might be incorrect or certificate might be corrupted.");
+                _logger.LogError("Certificate path: {Path}", fullPath);
+                _logger.LogError("Password provided: {HasPassword}", !string.IsNullOrEmpty(password));
+
+                throw new InvalidOperationException($"Failed to load certificate. The password might be incorrect or the certificate might be corrupted. Original error: {ex.Message}", ex);
+            }
         }
 
         private string ExtractOibFromFinaCertificate(X509Certificate2 certificate, CompanyProfile company)

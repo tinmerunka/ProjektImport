@@ -11,9 +11,13 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 
-// Configure Entity Framework
+// Configure Entity Framework - KEEP EXISTING DATABASE
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Configure Entity Framework - NEW UTILITY DATABASE
+builder.Services.AddDbContext<UtilityDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("UtilityBillingConnection")));
 
 // Register JWT Service
 builder.Services.AddScoped<IJwtService, JwtService>();
@@ -57,7 +61,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Inventory Management API", Version = "v1" });
+    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Inventory & Utility Billing API", Version = "v1" });
 
     // Add JWT Authentication to Swagger
     c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
