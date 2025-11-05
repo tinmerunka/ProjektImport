@@ -19,6 +19,9 @@ namespace InventoryManagementAPI.Controllers
         private readonly IFiscalizationService _fiscalizationService;
         private readonly ILogger<UtilityFiscalizationController> _logger;
 
+        // ✅ Fiscalization date limit (30 days for test environment)
+        private static readonly TimeSpan MaxInvoiceAge = TimeSpan.FromDays(30);
+
         public UtilityFiscalizationController(
             UtilityDbContext context,
             IFiscalizationService fiscalizationService,
@@ -53,6 +56,38 @@ namespace InventoryManagementAPI.Controllers
                     {
                         Success = false,
                         Message = "Invoice is already fiscalized"
+                    });
+                }
+
+                // ✅ CHECK: Invoice age limit
+                var invoiceAge = DateTime.Now - utilityInvoice.IssueDate;
+                if (invoiceAge > MaxInvoiceAge)
+                {
+                    var errorMessage = $"Invoice from {utilityInvoice.IssueDate:yyyy-MM-dd} is too old to fiscalize. " +
+                                     $"Invoice is {invoiceAge.Days} days old. Maximum allowed age is {MaxInvoiceAge.Days} days.";
+
+                    _logger.LogWarning("Cannot fiscalize invoice {InvoiceNumber}: {Message}",
+                        utilityInvoice.InvoiceNumber, errorMessage);
+
+                    // Update invoice status
+                    utilityInvoice.FiscalizationStatus = "too_old";
+                    utilityInvoice.FiscalizationError = errorMessage;
+                    utilityInvoice.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = errorMessage,
+                        Data = new
+                        {
+                            InvoiceId = id,
+                            InvoiceNumber = utilityInvoice.InvoiceNumber,
+                            InvoiceDate = utilityInvoice.IssueDate.ToString("yyyy-MM-dd"),
+                            AgeDays = invoiceAge.Days,
+                            MaxAgeDays = MaxInvoiceAge.Days,
+                            FiscalizationStatus = "too_old"
+                        }
                     });
                 }
 
@@ -165,7 +200,10 @@ namespace InventoryManagementAPI.Controllers
                     });
                 }
 
-                var company = await _context.CompanyProfiles.FirstOrDefaultAsync();
+                var company = await _context.CompanyProfiles
+                    .Where(c => c.FiscalizationEnabled)
+                    .FirstOrDefaultAsync();
+
                 if (company == null)
                 {
                     return BadRequest(new ApiResponse<object>
@@ -183,11 +221,37 @@ namespace InventoryManagementAPI.Controllers
                 var results = new List<object>();
                 int successCount = 0;
                 int errorCount = 0;
+                int tooOldCount = 0;
 
                 foreach (var utilityInvoice in utilityInvoices)
                 {
                     try
                     {
+                        // ✅ CHECK: Invoice age for each invoice in batch
+                        var invoiceAge = DateTime.Now - utilityInvoice.IssueDate;
+                        if (invoiceAge > MaxInvoiceAge)
+                        {
+                            var errorMessage = $"Invoice is {invoiceAge.Days} days old (max: {MaxInvoiceAge.Days} days)";
+
+                            utilityInvoice.FiscalizationStatus = "too_old";
+                            utilityInvoice.FiscalizationError = errorMessage;
+                            utilityInvoice.UpdatedAt = DateTime.UtcNow;
+                            tooOldCount++;
+
+                            results.Add(new
+                            {
+                                InvoiceId = utilityInvoice.Id,
+                                InvoiceNumber = utilityInvoice.InvoiceNumber,
+                                InvoiceDate = utilityInvoice.IssueDate.ToString("yyyy-MM-dd"),
+                                Success = false,
+                                Message = errorMessage,
+                                Status = "too_old",
+                                Jir = (string?)null
+                            });
+
+                            continue; // Skip to next invoice
+                        }
+
                         var invoice = ConvertUtilityInvoiceToInvoice(utilityInvoice);
                         var fiscalizationResult = await _fiscalizationService.FiscalizeInvoiceAsync(invoice, company);
 
@@ -213,8 +277,10 @@ namespace InventoryManagementAPI.Controllers
                         {
                             InvoiceId = utilityInvoice.Id,
                             InvoiceNumber = utilityInvoice.InvoiceNumber,
+                            InvoiceDate = utilityInvoice.IssueDate.ToString("yyyy-MM-dd"),
                             Success = fiscalizationResult.Success,
                             Message = fiscalizationResult.Message,
+                            Status = utilityInvoice.FiscalizationStatus,
                             Jir = utilityInvoice.Jir
                         });
 
@@ -234,8 +300,10 @@ namespace InventoryManagementAPI.Controllers
                         {
                             InvoiceId = utilityInvoice.Id,
                             InvoiceNumber = utilityInvoice.InvoiceNumber,
+                            InvoiceDate = utilityInvoice.IssueDate.ToString("yyyy-MM-dd"),
                             Success = false,
                             Message = ex.Message,
+                            Status = "error",
                             Jir = (string?)null
                         });
                     }
@@ -246,12 +314,14 @@ namespace InventoryManagementAPI.Controllers
                 return Ok(new ApiResponse<object>
                 {
                     Success = true,
-                    Message = $"Batch fiscalization completed. {successCount} successful, {errorCount} errors",
+                    Message = $"Batch fiscalization completed. {successCount} successful, {errorCount} errors, {tooOldCount} too old",
                     Data = new
                     {
                         TotalProcessed = utilityInvoices.Count,
                         SuccessCount = successCount,
                         ErrorCount = errorCount,
+                        TooOldCount = tooOldCount,
+                        MaxAgeDays = MaxInvoiceAge.Days,
                         Results = results
                     }
                 });
@@ -303,6 +373,57 @@ namespace InventoryManagementAPI.Controllers
 
         private Invoice ConvertUtilityInvoiceToInvoice(UtilityInvoice utilityInvoice)
         {
+            _logger.LogInformation("=== CONVERTING INVOICE {InvoiceNumber} ===", utilityInvoice.InvoiceNumber);
+            _logger.LogInformation("Invoice Date: {IssueDate}, Age: {Age} days",
+                utilityInvoice.IssueDate, (DateTime.Now - utilityInvoice.IssueDate).Days);
+
+            // Handle customer OIB properly
+            string? customerOib = null;
+            if (!string.IsNullOrEmpty(utilityInvoice.CustomerOib) &&
+                utilityInvoice.CustomerOib != "0" &&
+                utilityInvoice.CustomerOib.Length == 11)
+            {
+                if (System.Text.RegularExpressions.Regex.IsMatch(utilityInvoice.CustomerOib, @"^\d{11}$"))
+                {
+                    customerOib = utilityInvoice.CustomerOib;
+                }
+            }
+
+            // Use the EXACT values from the database
+            decimal totalAmount = utilityInvoice.TotalAmount;
+            decimal vatAmount = utilityInvoice.VatAmount;
+            decimal subTotal = utilityInvoice.SubTotal;
+
+            // Verify the math makes sense
+            var calculatedTotal = subTotal + vatAmount;
+            if (Math.Abs(calculatedTotal - totalAmount) > 0.01m)
+            {
+                _logger.LogWarning("Math doesn't add up! Adjusting values...");
+                if (vatAmount > 0)
+                {
+                    subTotal = Math.Round(totalAmount / 1.05m, 2);
+                    vatAmount = totalAmount - subTotal;
+                }
+                else
+                {
+                    subTotal = totalAmount;
+                    vatAmount = 0;
+                }
+            }
+
+            // Calculate tax rate
+            decimal taxRate = 0.00m;
+            if (vatAmount > 0 && subTotal > 0)
+            {
+                var calculatedRate = (vatAmount / subTotal) * 100;
+
+                // Round to nearest valid Croatian VAT rate
+                if (calculatedRate <= 2.5m) taxRate = 0.00m;
+                else if (calculatedRate <= 7.5m) taxRate = 5.00m;
+                else if (calculatedRate <= 19m) taxRate = 13.00m;
+                else taxRate = 25.00m;
+            }
+
             return new Invoice
             {
                 Id = utilityInvoice.Id,
@@ -311,40 +432,31 @@ namespace InventoryManagementAPI.Controllers
                 Status = InvoiceStatus.Paid,
                 Currency = "EUR",
                 IssueLocation = utilityInvoice.Building,
+
+                // ✅ USE ORIGINAL INVOICE DATE (not current date)
                 IssueDate = utilityInvoice.IssueDate,
                 DueDate = utilityInvoice.DueDate,
                 DeliveryDate = utilityInvoice.IssueDate,
-                CustomerId = 0, // Not needed for fiscalization
+
+                CustomerId = 0,
                 CustomerName = utilityInvoice.CustomerName,
                 CustomerAddress = utilityInvoice.CustomerAddress,
-                CustomerOib = utilityInvoice.CustomerOib,
-                CompanyName = "Utility Company", // Will be overridden by company profile
+                CustomerOib = customerOib,
+                CompanyName = "Utility Company",
                 CompanyAddress = "",
                 CompanyOib = "",
-                SubTotal = utilityInvoice.SubTotal,
-                TaxAmount = utilityInvoice.VatAmount,
-                TotalAmount = utilityInvoice.TotalAmount,
-                TaxRate = utilityInvoice.VatAmount > 0 ? (utilityInvoice.VatAmount / utilityInvoice.SubTotal * 100) : 0,
-                PaidAmount = utilityInvoice.TotalAmount,
+                SubTotal = subTotal,
+                TaxAmount = vatAmount,
+                TotalAmount = totalAmount,
+                TaxRate = taxRate,
+                PaidAmount = totalAmount,
                 RemainingAmount = 0,
-                PaymentMethod = "Bank Transfer",
-                PaymentMethodCode = "G",
+                PaymentMethod = "Transakcijski račun",
+                PaymentMethodCode = "T",
                 Notes = utilityInvoice.DebtText,
                 CreatedAt = utilityInvoice.CreatedAt,
                 FiscalizationStatus = utilityInvoice.FiscalizationStatus,
-                Items = utilityInvoice.Items.Select(item => new InvoiceItem
-                {
-                    ProductName = item.Description,
-                    ProductSku = $"UTIL-{item.ItemOrder}",
-                    ProductKpdCode = "3", // Services
-                    ProductDescription = item.Description,
-                    UnitPrice = item.UnitPrice,
-                    Quantity = item.Quantity,
-                    TaxRate = utilityInvoice.VatAmount > 0 ? (utilityInvoice.VatAmount / utilityInvoice.SubTotal * 100) : 0,
-                    LineTotal = item.Amount,
-                    LineTaxAmount = item.Amount * (utilityInvoice.VatAmount > 0 ? (utilityInvoice.VatAmount / utilityInvoice.SubTotal) : 0),
-                    Unit = item.Unit
-                }).ToList()
+                Items = new List<InvoiceItem>()
             };
         }
     }

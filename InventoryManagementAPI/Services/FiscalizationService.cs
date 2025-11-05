@@ -237,15 +237,25 @@ namespace InventoryManagementAPI.Services
             if (string.IsNullOrEmpty(fullInvoiceNumber))
                 return "1";
 
-            if (fullInvoiceNumber.Contains('/'))
-            {
-                var parts = fullInvoiceNumber.Split('/');
-                return parts[0].Trim();
-            }
-
+            // For format "81-907013-2025045", use the middle part (907013) which is unique
             if (fullInvoiceNumber.Contains('-'))
             {
                 var parts = fullInvoiceNumber.Split('-');
+                if (parts.Length >= 2)
+                {
+                    // Use the second part which should be unique (907013)
+                    var uniquePart = parts[1].Trim();
+                    _logger.LogInformation("Using unique sequential number: {SequentialNumber} from {FullInvoiceNumber}",
+                        uniquePart, fullInvoiceNumber);
+                    return uniquePart;
+                }
+
+                return parts[0].Trim();
+            }
+
+            if (fullInvoiceNumber.Contains('/'))
+            {
+                var parts = fullInvoiceNumber.Split('/');
                 return parts[0].Trim();
             }
 
@@ -256,19 +266,23 @@ namespace InventoryManagementAPI.Services
         {
             var datumVrijeme = invoice.IssueDate.ToString("dd.MM.yyyyTHH:mm:ss");
             var iznosUkupno = invoice.TotalAmount.ToString("F2", CultureInfo.InvariantCulture);
-            var oznPosPr = company != null && !string.IsNullOrEmpty(company.InvoiceParam1) ? company.InvoiceParam1 : "01";
+
+            // ✅ FIX: Use EXACT same defaults as CreateFinaXmlRequest
+            var oznPosPr = company != null && !string.IsNullOrEmpty(company.InvoiceParam1) ? company.InvoiceParam1 : "1";  // Changed from "01"
             var oznNapUr = company != null && !string.IsNullOrEmpty(company.InvoiceParam2) ? company.InvoiceParam2 : "1";
             var brOznRac = ExtractInvoiceNumber(invoice.InvoiceNumber);
 
             var zkiString = $"{oib}{datumVrijeme}{brOznRac}{oznPosPr}{oznNapUr}{iznosUkupno}";
 
-            _logger.LogDebug("ZKI Input String: {ZkiString}", zkiString);
+            _logger.LogInformation("ZKI Input String: {ZkiString}", zkiString); // Changed to Information to always see it
+            _logger.LogInformation("ZKI Components: OIB={Oib}, DateTime={DateTime}, BrRac={BrRac}, OznPosPr={OznPosPr}, OznNapUr={OznNapUr}, Total={Total}",
+                oib, datumVrijeme, brOznRac, oznPosPr, oznNapUr, iznosUkupno);
 
             using var md5 = MD5.Create();
             var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(zkiString));
             var zki = Convert.ToHexString(hash).ToLowerInvariant();
 
-            _logger.LogDebug("Generated ZKI: {Zki}", zki);
+            _logger.LogInformation("Generated ZKI: {Zki}", zki);
             return zki;
         }
 
@@ -276,21 +290,22 @@ namespace InventoryManagementAPI.Services
         {
             var elementId = "signXmlId";
             var currentDateTime = DateTime.Now.ToString("dd.MM.yyyyTHH:mm:ss");
+
+            // ✅ FIX: Use proper time format instead of 00:00:00
             var issueDateTime = invoice.IssueDate.ToString("dd.MM.yyyyTHH:mm:ss");
 
-            var oznPosPr = company != null && !string.IsNullOrEmpty(company.InvoiceParam1) ? company.InvoiceParam1 : "01";
+            // ✅ FIX: Use correct format (no leading zeros)
+            var oznPosPr = company != null && !string.IsNullOrEmpty(company.InvoiceParam1) ? company.InvoiceParam1 : "1";
             var oznNapUr = company != null && !string.IsNullOrEmpty(company.InvoiceParam2) ? company.InvoiceParam2 : "1";
             var brOznRac = ExtractInvoiceNumber(invoice.InvoiceNumber);
             var oznSlijed = "P";
 
-            // OibOper iz company profila, fallback na config
             var oibOper = company?.FiscalizationOperatorOib
                 ?? _configuration["Fiscalization:OperatorOib"]
-                ?? oib; // Ako ništa, koristi OIB izdavatelja
+                ?? oib;
 
-            var inPdv = company?.InPDV ?? false;
+            var inPdv = company?.InPDV ?? true; // ✅ Ensure this is true
 
-            // Generiraj PDV strukturu - grupira stavke po stopama PDV-a
             var pdvXml = GeneratePdvXml(invoice);
 
             var xml = $@"<tns:RacunZahtjev xmlns:tns=""{FINA_NAMESPACE}"" Id=""{elementId}"">
@@ -310,7 +325,7 @@ namespace InventoryManagementAPI.Services
     </tns:BrRac>
 {pdvXml}
     <tns:IznosUkupno>{invoice.TotalAmount.ToString("F2", CultureInfo.InvariantCulture)}</tns:IznosUkupno>
-    <tns:NacinPlac>{invoice.PaymentMethodCode ?? "G"}</tns:NacinPlac>
+    <tns:NacinPlac>{invoice.PaymentMethodCode ?? "T"}</tns:NacinPlac>
     <tns:OibOper>{oibOper}</tns:OibOper>
     <tns:ZastKod>{zki}</tns:ZastKod>
     <tns:NakDost>false</tns:NakDost>
@@ -329,12 +344,12 @@ namespace InventoryManagementAPI.Services
             var sb = new StringBuilder();
             sb.AppendLine("    <tns:Pdv>");
 
-            // Ako invoice nema Items (stari način), koristi invoice-level PDV podatke
-            if (invoice.Items == null || !invoice.Items.Any())
-            {
-                _logger.LogWarning("Invoice {InvoiceNumber} has no items, using invoice-level tax data",
-                    invoice.InvoiceNumber);
+            // ALWAYS use invoice-level tax data for utility invoices
+            _logger.LogInformation("Invoice {InvoiceNumber} using invoice-level tax data: SubTotal={SubTotal}, TaxAmount={TaxAmount}, TaxRate={TaxRate}%",
+                invoice.InvoiceNumber, invoice.SubTotal, invoice.TaxAmount, invoice.TaxRate);
 
+            if (invoice.TaxAmount > 0 && invoice.TaxRate > 0)
+            {
                 sb.AppendLine("      <tns:Porez>");
                 sb.AppendLine($"        <tns:Stopa>{invoice.TaxRate.ToString("F2", CultureInfo.InvariantCulture)}</tns:Stopa>");
                 sb.AppendLine($"        <tns:Osnovica>{invoice.SubTotal.ToString("F2", CultureInfo.InvariantCulture)}</tns:Osnovica>");
@@ -343,32 +358,12 @@ namespace InventoryManagementAPI.Services
             }
             else
             {
-                // Grupiraj stavke po stopama PDV-a
-                var taxGroups = invoice.Items
-                    .GroupBy(item => item.TaxRate)
-                    .OrderByDescending(g => g.Key) // Poredaj po stopi (najviša prva)
-                    .ToList();
-
-                _logger.LogDebug("Invoice {InvoiceNumber} has {GroupCount} different tax rates",
-                    invoice.InvoiceNumber, taxGroups.Count);
-
-                foreach (var taxGroup in taxGroups)
-                {
-                    var taxRate = taxGroup.Key;
-
-                    // Izračunaj osnovicu i PDV za ovu grupu
-                    var taxAmount = taxGroup.Sum(item => item.LineTaxAmount);
-                    var subTotal = taxGroup.Sum(item => item.LineTotal - item.LineTaxAmount);
-
-                    sb.AppendLine("      <tns:Porez>");
-                    sb.AppendLine($"        <tns:Stopa>{taxRate.ToString("F2", CultureInfo.InvariantCulture)}</tns:Stopa>");
-                    sb.AppendLine($"        <tns:Osnovica>{subTotal.ToString("F2", CultureInfo.InvariantCulture)}</tns:Osnovica>");
-                    sb.AppendLine($"        <tns:Iznos>{taxAmount.ToString("F2", CultureInfo.InvariantCulture)}</tns:Iznos>");
-                    sb.AppendLine("      </tns:Porez>");
-
-                    _logger.LogDebug("Tax group: Rate={TaxRate}%, Base={SubTotal}, Tax={TaxAmount}",
-                        taxRate, subTotal, taxAmount);
-                }
+                // Zero tax rate - use SubTotal from invoice
+                sb.AppendLine("      <tns:Porez>");
+                sb.AppendLine("        <tns:Stopa>0.00</tns:Stopa>");
+                sb.AppendLine($"        <tns:Osnovica>{invoice.SubTotal.ToString("F2", CultureInfo.InvariantCulture)}</tns:Osnovica>");
+                sb.AppendLine("        <tns:Iznos>0.00</tns:Iznos>");
+                sb.AppendLine("      </tns:Porez>");
             }
 
             sb.Append("    </tns:Pdv>");
