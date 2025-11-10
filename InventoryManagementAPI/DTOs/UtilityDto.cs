@@ -79,6 +79,8 @@ namespace InventoryManagementAPI.DTOs
         public DateTime CreatedAt { get; set; }
         public int ItemCount { get; set; }
         public int ConsumptionDataCount { get; set; }
+        public string? Jir { get; set; } = string.Empty;
+        public DateTime? FiscalizedAt { get; set; }
     }
 
     public class FiscalizeUtilityInvoiceRequest

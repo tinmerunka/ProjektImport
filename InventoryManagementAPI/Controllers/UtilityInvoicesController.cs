@@ -22,8 +22,11 @@ namespace InventoryManagementAPI.Controllers
             _logger = logger;
         }
 
+        /// <summary>
+        /// Base endpoint - Get ALL utility invoices (for import history and fallback)
+        /// </summary>
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<List<UtilityInvoiceListResponse>>>> GetUtilityInvoices(
+        public async Task<ActionResult<ApiResponse<object>>> GetUtilityInvoices(
             [FromQuery] string? searchTerm = null,
             [FromQuery] string? period = null,
             [FromQuery] string? building = null,
@@ -61,8 +64,10 @@ namespace InventoryManagementAPI.Controllers
                     query = query.Where(u => u.FiscalizationStatus == fiscalizationStatus);
                 }
 
-                // Apply pagination
+                // Get total count before pagination
                 var totalCount = await query.CountAsync();
+
+                // Apply pagination
                 var invoices = await query
                     .OrderByDescending(u => u.CreatedAt)
                     .Skip((page - 1) * pageSize)
@@ -79,26 +84,225 @@ namespace InventoryManagementAPI.Controllers
                         DueDate = u.DueDate,
                         TotalAmount = u.TotalAmount,
                         FiscalizationStatus = u.FiscalizationStatus,
+                        Jir = u.Jir,
+                        FiscalizedAt = u.FiscalizedAt,
                         CreatedAt = u.CreatedAt,
                         ItemCount = u.Items.Count,
                         ConsumptionDataCount = u.ConsumptionData.Count
                     })
                     .ToListAsync();
 
-                return Ok(new ApiResponse<List<UtilityInvoiceListResponse>>
+                return Ok(new ApiResponse<object>
                 {
                     Success = true,
                     Message = $"Retrieved {invoices.Count} of {totalCount} utility invoices",
-                    Data = invoices
+                    Data = new
+                    {
+                        Items = invoices,
+                        PageNumber = page,
+                        PageSize = pageSize,
+                        TotalRecords = totalCount,
+                        TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                    }
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving utility invoices");
-                return StatusCode(500, new ApiResponse<List<UtilityInvoiceListResponse>>
+                return StatusCode(500, new ApiResponse<object>
                 {
                     Success = false,
                     Message = "An error occurred while retrieving utility invoices"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Get all utility invoices from all imports with filtering and pagination
+        /// </summary>
+        [HttpGet("all-invoices")]
+        public async Task<ActionResult<ApiResponse<object>>> GetAllUtilityInvoices(
+            [FromQuery] string? searchTerm = null,
+            [FromQuery] string? period = null,
+            [FromQuery] string? building = null,
+            [FromQuery] string? fiscalizationStatus = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            try
+            {
+                var query = _context.UtilityInvoices
+                    .Include(u => u.Items)
+                    .Include(u => u.ConsumptionData)
+                    .AsQueryable();
+
+                // Apply filters
+                if (!string.IsNullOrEmpty(searchTerm))
+                {
+                    query = query.Where(u => u.CustomerName.Contains(searchTerm) ||
+                                           u.CustomerCode.Contains(searchTerm) ||
+                                           u.InvoiceNumber.Contains(searchTerm));
+                }
+
+                if (!string.IsNullOrEmpty(period))
+                {
+                    query = query.Where(u => u.Period == period);
+                }
+
+                if (!string.IsNullOrEmpty(building))
+                {
+                    query = query.Where(u => u.Building.Contains(building));
+                }
+
+                if (!string.IsNullOrEmpty(fiscalizationStatus))
+                {
+                    query = query.Where(u => u.FiscalizationStatus == fiscalizationStatus);
+                }
+
+                // Get total count before pagination
+                var totalCount = await query.CountAsync();
+
+                // Apply pagination
+                var invoices = await query
+                    .OrderByDescending(u => u.CreatedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(u => new UtilityInvoiceListResponse
+                    {
+                        Id = u.Id,
+                        Building = u.Building,
+                        Period = u.Period,
+                        InvoiceNumber = u.InvoiceNumber,
+                        CustomerCode = u.CustomerCode,
+                        CustomerName = u.CustomerName,
+                        IssueDate = u.IssueDate,
+                        DueDate = u.DueDate,
+                        TotalAmount = u.TotalAmount,
+                        FiscalizationStatus = u.FiscalizationStatus,
+                        Jir = u.Jir,
+                        FiscalizedAt = u.FiscalizedAt,
+                        CreatedAt = u.CreatedAt,
+                        ItemCount = u.Items.Count,
+                        ConsumptionDataCount = u.ConsumptionData.Count
+                    })
+                    .ToListAsync();
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = true,
+                    Message = $"Retrieved {invoices.Count} of {totalCount} utility invoices",
+                    Data = new
+                    {
+                        Items = invoices,
+                        PageNumber = page,
+                        PageSize = pageSize,
+                        TotalRecords = totalCount,
+                        TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving all utility invoices");
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "An error occurred while retrieving utility invoices"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Get only the invoices from the latest CSV import
+        /// </summary>
+        [HttpGet("imported-invoices")]
+        public async Task<ActionResult<ApiResponse<object>>> GetLatestImportedInvoices(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            try
+            {
+                // Find the latest import time (most recent CreatedAt timestamp)
+                var latestImportTime = await _context.UtilityInvoices
+                    .OrderByDescending(u => u.CreatedAt)
+                    .Select(u => u.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (latestImportTime == default)
+                {
+                    return Ok(new ApiResponse<object>
+                    {
+                        Success = true,
+                        Message = "No imported invoices found",
+                        Data = new
+                        {
+                            Items = new List<UtilityInvoiceListResponse>(),
+                            PageNumber = page,
+                            PageSize = pageSize,
+                            TotalRecords = 0,
+                            TotalPages = 0,
+                            LatestImportDate = (DateTime?)null
+                        }
+                    });
+                }
+
+                // Consider invoices created within 5 minutes of the latest import as part of the same batch
+                var importTimeThreshold = latestImportTime.AddMinutes(-5);
+
+                var query = _context.UtilityInvoices
+                    .Include(u => u.Items)
+                    .Include(u => u.ConsumptionData)
+                    .Where(u => u.CreatedAt >= importTimeThreshold)
+                    .AsQueryable();
+
+                var totalCount = await query.CountAsync();
+
+                var invoices = await query
+                    .OrderByDescending(u => u.CreatedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(u => new UtilityInvoiceListResponse
+                    {
+                        Id = u.Id,
+                        Building = u.Building,
+                        Period = u.Period,
+                        InvoiceNumber = u.InvoiceNumber,
+                        CustomerCode = u.CustomerCode,
+                        CustomerName = u.CustomerName,
+                        IssueDate = u.IssueDate,
+                        DueDate = u.DueDate,
+                        TotalAmount = u.TotalAmount,
+                        FiscalizationStatus = u.FiscalizationStatus,
+                        Jir = u.Jir,
+                        FiscalizedAt = u.FiscalizedAt,
+                        CreatedAt = u.CreatedAt,
+                        ItemCount = u.Items.Count,
+                        ConsumptionDataCount = u.ConsumptionData.Count
+                    })
+                    .ToListAsync();
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = true,
+                    Message = $"Retrieved {totalCount} invoices from latest import on {latestImportTime:yyyy-MM-dd HH:mm:ss}",
+                    Data = new
+                    {
+                        Items = invoices,
+                        PageNumber = page,
+                        PageSize = pageSize,
+                        TotalRecords = totalCount,
+                        TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize),
+                        LatestImportDate = latestImportTime
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving latest imported invoices");
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "An error occurred while retrieving the latest imported invoices"
                 });
             }
         }
@@ -250,6 +454,7 @@ namespace InventoryManagementAPI.Controllers
                         FiscalizedCount = g.Count(u => u.FiscalizationStatus == "fiscalized"),
                         PendingCount = g.Count(u => u.FiscalizationStatus == "not_required"),
                         ErrorCount = g.Count(u => u.FiscalizationStatus == "error"),
+                        TooOldCount = g.Count(u => u.FiscalizationStatus == "too_old"),
                         Periods = g.Select(u => u.Period).Distinct().ToList(),
                         Buildings = g.Select(u => u.Building).Distinct().ToList()
                     })
@@ -264,6 +469,7 @@ namespace InventoryManagementAPI.Controllers
                         FiscalizedCount = 0,
                         PendingCount = 0,
                         ErrorCount = 0,
+                        TooOldCount = 0,
                         Periods = new List<string>(),
                         Buildings = new List<string>()
                     };
