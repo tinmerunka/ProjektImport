@@ -492,5 +492,109 @@ namespace InventoryManagementAPI.Controllers
                 });
             }
         }
+
+        /// Get all invoices from a specific import batch
+        [HttpGet("by-batch/{batchId}")]
+        public async Task<ActionResult<ApiResponse<object>>> GetInvoicesByBatch(
+            string batchId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50,
+            [FromQuery] string? sortBy = "CreatedAt",
+            [FromQuery] string? sortDirection = "desc")
+        {
+            try
+            {
+                // Verify batch exists
+                var batchExists = await _context.ImportBatches
+                    .AnyAsync(b => b.BatchId == batchId);
+
+                if (!batchExists)
+                {
+                    return NotFound(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = $"Import batch '{batchId}' not found"
+                    });
+                }
+
+                var query = _context.UtilityInvoices
+                    .Include(u => u.Items)
+                    .Include(u => u.ConsumptionData)
+                    .Where(u => u.ImportBatchId == batchId)
+                    .AsQueryable();
+
+                // Apply sorting
+                query = sortBy?.ToLower() switch
+                {
+                    "invoicenumber" => sortDirection?.ToLower() == "asc"
+                        ? query.OrderBy(u => u.InvoiceNumber)
+                        : query.OrderByDescending(u => u.InvoiceNumber),
+                    "customername" => sortDirection?.ToLower() == "asc"
+                        ? query.OrderBy(u => u.CustomerName)
+                        : query.OrderByDescending(u => u.CustomerName),
+                    "totalamount" => sortDirection?.ToLower() == "asc"
+                        ? query.OrderBy(u => u.TotalAmount)
+                        : query.OrderByDescending(u => u.TotalAmount),
+                    "issuedate" => sortDirection?.ToLower() == "asc"
+                        ? query.OrderBy(u => u.IssueDate)
+                        : query.OrderByDescending(u => u.IssueDate),
+                    "fiscalizationstatus" => sortDirection?.ToLower() == "asc"
+                        ? query.OrderBy(u => u.FiscalizationStatus)
+                        : query.OrderByDescending(u => u.FiscalizationStatus),
+                    _ => sortDirection?.ToLower() == "asc"
+                        ? query.OrderBy(u => u.CreatedAt)
+                        : query.OrderByDescending(u => u.CreatedAt)
+                };
+
+                var totalCount = await query.CountAsync();
+
+                var invoices = await query
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(u => new UtilityInvoiceListResponse
+                    {
+                        Id = u.Id,
+                        Building = u.Building,
+                        Period = u.Period,
+                        InvoiceNumber = u.InvoiceNumber,
+                        CustomerCode = u.CustomerCode,
+                        CustomerName = u.CustomerName,
+                        IssueDate = u.IssueDate,
+                        DueDate = u.DueDate,
+                        TotalAmount = u.TotalAmount,
+                        FiscalizationStatus = u.FiscalizationStatus,
+                        Jir = u.Jir,
+                        FiscalizedAt = u.FiscalizedAt,
+                        CreatedAt = u.CreatedAt,
+                        ItemCount = u.Items.Count,
+                        ConsumptionDataCount = u.ConsumptionData.Count
+                    })
+                    .ToListAsync();
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = true,
+                    Message = $"Retrieved {invoices.Count} of {totalCount} invoices from batch '{batchId}'",
+                    Data = new
+                    {
+                        Items = invoices,
+                        PageNumber = page,
+                        PageSize = pageSize,
+                        TotalRecords = totalCount,
+                        TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize),
+                        BatchId = batchId
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving invoices for batch {BatchId}", batchId);
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "An error occurred while retrieving invoices"
+                });
+            }
+        }
     }
 }

@@ -5,260 +5,282 @@ using InventoryManagementAPI.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 
 namespace InventoryManagementAPI.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/utility/[controller]")]
     [Authorize]
     public class UtilityImportController : ControllerBase
     {
         private readonly UtilityDbContext _context;
         private readonly ILogger<UtilityImportController> _logger;
+        private readonly IWebHostEnvironment _environment;
 
-        public UtilityImportController(UtilityDbContext context, ILogger<UtilityImportController> logger)
+        public UtilityImportController(
+            UtilityDbContext context,
+            ILogger<UtilityImportController> logger,
+            IWebHostEnvironment environment)
         {
             _context = context;
             _logger = logger;
+            _environment = environment;
         }
 
-        [HttpPost("csv")]
-        public async Task<ActionResult<ApiResponse<ImportResult>>> ImportUtilityInvoicesFromCsv(IFormFile file)
+        [HttpPost("upload")]
+        public async Task<ActionResult<ApiResponse<object>>> UploadCsvFile(IFormFile file)
         {
+            var stopwatch = Stopwatch.StartNew();
+            string? batchId = null;
+            ImportBatch? importBatch = null;
+            var importErrors = new List<object>();
+
             try
             {
                 if (file == null || file.Length == 0)
                 {
-                    return BadRequest(new ApiResponse<ImportResult>
+                    return BadRequest(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = "No file provided"
+                        Message = "No file uploaded"
                     });
                 }
 
                 if (!file.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
                 {
-                    return BadRequest(new ApiResponse<ImportResult>
+                    return BadRequest(new ApiResponse<object>
                     {
                         Success = false,
                         Message = "Only CSV files are allowed"
                     });
                 }
 
-                var result = new ImportResult();
-                var errors = new List<string>();
+                // Create import batch record
+                batchId = Guid.NewGuid().ToString();
+                var username = User.Identity?.Name ?? "Unknown";
 
+                importBatch = new ImportBatch
+                {
+                    BatchId = batchId,
+                    FileName = file.FileName,
+                    ImportedAt = DateTime.UtcNow,
+                    ImportedBy = username,
+                    FileSize = file.Length,
+                    Status = ImportBatchStatus.InProgress,
+                    TotalRecords = 0,
+                    SuccessfulRecords = 0,
+                    FailedRecords = 0,
+                    SkippedRecords = 0
+                };
+
+                _context.ImportBatches.Add(importBatch);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Started import batch {BatchId} for file {FileName}", batchId, file.FileName);
+
+                // Parse CSV
                 using var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8);
                 var csvContent = await reader.ReadToEndAsync();
-                var lines = csvContent.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                var lines = csvContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
 
                 if (lines.Length < 2)
                 {
-                    return BadRequest(new ApiResponse<ImportResult>
+                    importBatch.Status = ImportBatchStatus.Failed;
+                    importBatch.ErrorLog = JsonSerializer.Serialize(new[] { new { Error = "CSV file is empty or has no data rows" } });
+                    await _context.SaveChangesAsync();
+
+                    return BadRequest(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = "CSV file must contain at least a header and one data row"
+                        Message = "CSV file is empty or has no data rows"
                     });
                 }
 
-                // Skip header row
+                var headers = lines[0].Split(';');
+                importBatch.TotalRecords = lines.Length - 1;
+                await _context.SaveChangesAsync();
+
+                int successCount = 0;
+                int failedCount = 0;
+                int skippedCount = 0;
+                var importedInvoices = new List<UtilityInvoice>();
+
+                // Process each line
                 for (int i = 1; i < lines.Length; i++)
                 {
-                    var line = lines[i].Trim();
-                    if (string.IsNullOrEmpty(line)) continue;
-
                     try
                     {
-                        var invoice = await ParseCsvLineToUtilityInvoice(line, i + 1);
-                        if (invoice != null)
+                        var values = lines[i].Split(';');
+                        if (values.Length < headers.Length)
                         {
-                            _context.UtilityInvoices.Add(invoice);
-                            result.ProcessedCount++;
+                            failedCount++;
+                            importErrors.Add(new { Row = i + 1, Error = "Insufficient columns" });
+                            continue;
                         }
+
+                        var invoice = ParseCsvLineToInvoice(headers, values, batchId);
+
+                        // Check for duplicates
+                        var isDuplicate = await _context.UtilityInvoices
+                            .AnyAsync(u => u.InvoiceNumber == invoice.InvoiceNumber);
+
+                        if (isDuplicate)
+                        {
+                            skippedCount++;
+                            importErrors.Add(new { Row = i + 1, InvoiceNumber = invoice.InvoiceNumber, Error = "Duplicate invoice number" });
+                            continue;
+                        }
+
+                        importedInvoices.Add(invoice);
+                        successCount++;
                     }
                     catch (Exception ex)
                     {
-                        errors.Add($"Line {i + 1}: {ex.Message}");
-                        result.ErrorCount++;
-                        _logger.LogWarning(ex, "Error processing line {LineNumber}", i + 1);
+                        failedCount++;
+                        importErrors.Add(new { Row = i + 1, Error = ex.Message });
+                        _logger.LogError(ex, "Error parsing row {Row}", i + 1);
                     }
                 }
 
-                if (result.ProcessedCount > 0)
+                // Save all invoices
+                if (importedInvoices.Any())
                 {
-                    await _context.SaveChangesAsync();
-                    result.ImportedCount = result.ProcessedCount;
+                    await _context.UtilityInvoices.AddRangeAsync(importedInvoices);
                 }
 
-                result.Errors = errors;
+                // Update batch status
+                stopwatch.Stop();
+                importBatch.SuccessfulRecords = successCount;
+                importBatch.FailedRecords = failedCount;
+                importBatch.SkippedRecords = skippedCount;
+                importBatch.ImportDurationMs = stopwatch.ElapsedMilliseconds;
+                importBatch.Status = failedCount > 0
+                    ? (successCount > 0 ? ImportBatchStatus.PartiallyCompleted : ImportBatchStatus.Failed)
+                    : ImportBatchStatus.Completed;
 
-                return Ok(new ApiResponse<ImportResult>
+                if (importErrors.Any())
+                {
+                    importBatch.ErrorLog = JsonSerializer.Serialize(importErrors);
+                }
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "Completed import batch {BatchId}: {Success} successful, {Failed} failed, {Skipped} skipped in {Duration}ms",
+                    batchId, successCount, failedCount, skippedCount, stopwatch.ElapsedMilliseconds);
+
+                return Ok(new ApiResponse<object>
                 {
                     Success = true,
-                    Message = $"Import completed. {result.ImportedCount} invoices imported, {result.ErrorCount} errors",
-                    Data = result
+                    Message = $"Import completed: {successCount} successful, {failedCount} failed, {skippedCount} skipped",
+                    Data = new
+                    {
+                        BatchId = batchId,
+                        FileName = file.FileName,
+                        TotalRows = importBatch.TotalRecords,
+                        SuccessfulImports = successCount,
+                        FailedRows = failedCount,
+                        SkippedRows = skippedCount,
+                        ImportDurationMs = stopwatch.ElapsedMilliseconds,
+                        Errors = importErrors,
+                        Status = importBatch.Status.ToString()
+                    }
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error importing utility invoices");
-                return StatusCode(500, new ApiResponse<ImportResult>
+                _logger.LogError(ex, "Error during CSV import");
+
+                // Update batch status to failed
+                if (importBatch != null)
+                {
+                    stopwatch.Stop();
+                    importBatch.Status = ImportBatchStatus.Failed;
+                    importBatch.ImportDurationMs = stopwatch.ElapsedMilliseconds;
+                    importBatch.ErrorLog = JsonSerializer.Serialize(new[] { new { Error = ex.Message, StackTrace = ex.StackTrace } });
+                    await _context.SaveChangesAsync();
+                }
+
+                return StatusCode(500, new ApiResponse<object>
                 {
                     Success = false,
-                    Message = $"Import failed: {ex.Message}"
+                    Message = $"An error occurred during import: {ex.Message}",
+                    Data = new { BatchId = batchId }
                 });
             }
         }
 
-        private async Task<UtilityInvoice?> ParseCsvLineToUtilityInvoice(string csvLine, int lineNumber)
+        private UtilityInvoice ParseCsvLineToInvoice(string[] headers, string[] values, string batchId)
         {
-            var columns = csvLine.Split(';').Select(c => c.Trim('"').Trim()).ToArray();
-
-            if (columns.Length < 44) // Minimum required columns
-            {
-                throw new ArgumentException($"CSV line must have at least 44 columns, found {columns.Length}");
-            }
-
-            // Check if invoice number already exists
-            var invoiceNumber = columns[2]; // BRRN
-            if (await _context.UtilityInvoices.AnyAsync(i => i.InvoiceNumber == invoiceNumber))
-            {
-                throw new ArgumentException($"Invoice number {invoiceNumber} already exists");
-            }
-
-            // Parse dates with Croatian format
-            if (!DateTime.TryParseExact(columns[10], "d.M.yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var issueDate))
-            {
-                throw new ArgumentException($"Invalid issue date: {columns[10]}");
-            }
-
-            if (!DateTime.TryParseExact(columns[11], "d.M.yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dueDate))
-            {
-                throw new ArgumentException($"Invalid due date: {columns[11]}");
-            }
-
-            DateTime? validityDate = null;
-            if (!string.IsNullOrEmpty(columns[12]) && DateTime.TryParseExact(columns[12], "d.M.yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var vDate))
-            {
-                validityDate = vDate;
-            }
-
-            // Parse financial amounts
-            if (!decimal.TryParse(columns[41].Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out var subTotal))
-            {
-                throw new ArgumentException($"Invalid subtotal: {columns[41]}");
-            }
-
-            if (!decimal.TryParse(columns[42].Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out var vatAmount))
-            {
-                throw new ArgumentException($"Invalid VAT amount: {columns[42]}");
-            }
-
-            if (!decimal.TryParse(columns[44].Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out var totalAmount))
-            {
-                throw new ArgumentException($"Invalid total amount: {columns[44]}");
-            }
-
-            // Create utility invoice
             var invoice = new UtilityInvoice
             {
-                Building = columns[0], // ZGRADA
-                Period = columns[1], // RAZDOBLJE
-                InvoiceNumber = columns[2], // BRRN
-                Model = columns[3], // MODEL
-                CustomerCode = columns[4], // KKSIFRA
-                CustomerName = columns[5], // KKIME
-                CustomerAddress = columns[6], // KKADR
-                PostalCode = columns[7], // KKPTT
-                City = columns[8], // KKGRAD
-                CustomerOib = columns[9], // KKOIB
-                IssueDate = issueDate,
-                DueDate = dueDate,
-                ValidityDate = validityDate,
-                BankAccount = columns[13], // RNIBAN
-                ServiceTypeHot = columns[14], // TIP_TV
-                ServiceTypeHeating = columns[15], // TIP_GRI
-                SubTotal = subTotal,
-                VatAmount = vatAmount,
-                TotalAmount = totalAmount,
-                DebtText = columns.Length > 45 ? columns[45] : string.Empty, // DUG_TXT
-                ConsumptionText = columns.Length > 46 ? columns[46] : string.Empty, // POTROS_TXT
-                FiscalizationStatus = "not_required",
+                ImportBatchId = batchId,
                 CreatedAt = DateTime.UtcNow
             };
 
-            // Parse service items (OPIS1-5, JED1-5, KOL1-5, CIJ1-5, IZN1-5)
-            for (int i = 0; i < 5; i++)
+            for (int j = 0; j < headers.Length && j < values.Length; j++)
             {
-                int baseIndex = 16 + (i * 5); // Starting from OPIS1
+                var header = headers[j].Trim();
+                var value = values[j].Trim();
 
-                if (baseIndex + 4 < columns.Length && !string.IsNullOrEmpty(columns[baseIndex]))
+                switch (header)
                 {
-                    var item = new UtilityInvoiceItem
-                    {
-                        Description = columns[baseIndex], // OPIS
-                        Unit = columns[baseIndex + 1], // JED
-                        ItemOrder = i + 1
-                    };
-
-                    // Parse quantity
-                    if (decimal.TryParse(columns[baseIndex + 2].Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out var quantity))
-                    {
-                        item.Quantity = quantity;
-                    }
-
-                    // Parse unit price
-                    if (decimal.TryParse(columns[baseIndex + 3].Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out var unitPrice))
-                    {
-                        item.UnitPrice = unitPrice;
-                    }
-
-                    // Parse amount
-                    if (decimal.TryParse(columns[baseIndex + 4].Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out var amount))
-                    {
-                        item.Amount = amount;
-                    }
-
-                    invoice.Items.Add(item);
-                }
-            }
-
-            // Parse consumption data (TXT_TAB1-10, NUM_TAB1-10)
-            int consumptionStartIndex = Math.Max(0, columns.Length - 20); // Last 20 columns are consumption data
-            for (int i = 0; i < 10; i++)
-            {
-                int txtIndex = consumptionStartIndex + (i * 2);
-                int numIndex = txtIndex + 1;
-
-                if (txtIndex < columns.Length && !string.IsNullOrEmpty(columns[txtIndex]))
-                {
-                    var consumptionData = new UtilityConsumptionData
-                    {
-                        ParameterName = columns[txtIndex],
-                        ParameterOrder = i + 1
-                    };
-
-                    if (numIndex < columns.Length && decimal.TryParse(columns[numIndex].Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
-                    {
-                        consumptionData.ParameterValue = value;
-                    }
-
-                    invoice.ConsumptionData.Add(consumptionData);
+                    case "ZGRADA": invoice.Building = value; break;
+                    case "RAZDOBLJE": invoice.Period = value; break;
+                    case "BRRN": invoice.InvoiceNumber = value; break;
+                    case "MODEL": invoice.Model = value; break;
+                    case "DATISP":
+                        invoice.IssueDate = ParseCroatianDate(value);
+                        break;
+                    case "DATRN":
+                        invoice.DueDate = ParseCroatianDate(value);
+                        break;
+                    case "DATVAL":
+                        if (!string.IsNullOrEmpty(value))
+                            invoice.ValidityDate = ParseCroatianDate(value);
+                        break;
+                    case "RNIBAN": invoice.BankAccount = value; break;
+                    case "KKSIFRA": invoice.CustomerCode = value; break;
+                    case "KKIME": invoice.CustomerName = value; break;
+                    case "KKADRESA": invoice.CustomerAddress = value; break;
+                    case "KKPOSBROJ": invoice.PostalCode = value; break;
+                    case "KKGRAD": invoice.City = value; break;
+                    case "OIB": invoice.CustomerOib = value; break;
+                    case "TIP_TV": invoice.ServiceTypeHot = value; break;
+                    case "TIP_GRI": invoice.ServiceTypeHeating = value; break;
+                    case "UKUPNO_BEZ":
+                        invoice.SubTotal = ParseDecimal(value);
+                        break;
+                    case "PDV_1":
+                        invoice.VatAmount = ParseDecimal(value);
+                        break;
+                    case "SVEUKUP":
+                        invoice.TotalAmount = ParseDecimal(value);
+                        break;
+                    case "DUG_TXT": invoice.DebtText = value; break;
+                    case "POTROS_TXT": invoice.ConsumptionText = value; break;
                 }
             }
 
             return invoice;
         }
 
-        [HttpGet("template")]
-        public IActionResult DownloadCsvTemplate()
+        private DateTime ParseCroatianDate(string dateStr)
         {
-            var csvContent = "ZGRADA;RAZDOBLJE;BRRN;MODEL;KKSIFRA;KKIME;KKADR;KKPTT;KKGRAD;KKOIB;DATISP;DATRN;DATVAL;RNIBAN;TIP_TV;TIP_GRI;OPIS1;JED1;KOL1;CIJ1;IZN1;OPIS2;JED2;KOL2;CIJ2;IZN2;OPIS3;JED3;KOL3;CIJ3;IZN3;OPIS4;JED4;KOL4;CIJ4;IZN4;OPIS5;JED5;KOL5;CIJ5;IZN5;UKUPNO_BEZ;PDV_1;REZ_1;SVEUKUP;DUG_TXT;POTROS_TXT;;;;;;TXT_TAB1;NUM_TAB1;TXT_TAB2;NUM_TAB2;TXT_TAB3;NUM_TAB3;TXT_TAB4;NUM_TAB4;TXT_TAB5;NUM_TAB5;TXT_TAB6;NUM_TAB6;TXT_TAB7;NUM_TAB7;TXT_TAB8;NUM_TAB8;TXT_TAB9;NUM_TAB9;TXT_TAB10;NUM_TAB10";
+            var formats = new[] { "dd.MM.yyyy", "d.M.yyyy", "dd.MM.yy" };
+            if (DateTime.TryParseExact(dateStr, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+                return date;
+            return DateTime.Parse(dateStr);
+        }
 
-            var bytes = Encoding.UTF8.GetBytes(csvContent);
-            return File(bytes, "text/csv", "utility_invoice_template.csv");
+        private decimal ParseDecimal(string value)
+        {
+            value = value.Replace(",", ".");
+            return decimal.Parse(value, CultureInfo.InvariantCulture);
         }
     }
 }
