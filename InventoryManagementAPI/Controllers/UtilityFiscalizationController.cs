@@ -63,8 +63,8 @@ namespace InventoryManagementAPI.Controllers
                 var invoiceAge = DateTime.Now - utilityInvoice.IssueDate;
                 if (invoiceAge > MaxInvoiceAge)
                 {
-                    var errorMessage = $"Invoice from {utilityInvoice.IssueDate:yyyy-MM-dd} is too old to fiscalize. " +
-                                     $"Invoice is {invoiceAge.Days} days old. Maximum allowed age is {MaxInvoiceAge.Days} days.";
+                    var errorMessage = $"Račun od {utilityInvoice.IssueDate:dd.MM.yyyy} je prestar za fiskalizaciju. " +
+                    $"Račun je star {invoiceAge.Days} dana. Maksimalna dopuštena starost je {MaxInvoiceAge.Days} dana.";
 
                     _logger.LogWarning("Cannot fiscalize invoice {InvoiceNumber}: {Message}",
                         utilityInvoice.InvoiceNumber, errorMessage);

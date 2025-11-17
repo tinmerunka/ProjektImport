@@ -222,6 +222,13 @@ namespace InventoryManagementAPI.Controllers
                 CreatedAt = DateTime.UtcNow
             };
 
+            // Create dictionaries to store item data (OPIS1-5, JED1-5, etc.)
+            var itemDescriptions = new Dictionary<int, string>();
+            var itemUnits = new Dictionary<int, string>();
+            var itemQuantities = new Dictionary<int, decimal>();
+            var itemPrices = new Dictionary<int, decimal>();
+            var itemAmounts = new Dictionary<int, decimal>();
+
             for (int j = 0; j < headers.Length && j < values.Length; j++)
             {
                 var header = headers[j].Trim();
@@ -263,6 +270,58 @@ namespace InventoryManagementAPI.Controllers
                         break;
                     case "DUG_TXT": invoice.DebtText = value; break;
                     case "POTROS_TXT": invoice.ConsumptionText = value; break;
+
+                    // ✅ Parse invoice items (OPIS1-5, JED1-5, KOL1-5, CIJ1-5, IZN1-5)
+                    case string s when s.StartsWith("OPIS"):
+                        if (int.TryParse(s.Substring(4), out int opisIndex) && !string.IsNullOrWhiteSpace(value))
+                        {
+                            itemDescriptions[opisIndex] = value;
+                        }
+                        break;
+                    case string s when s.StartsWith("JED"):
+                        if (int.TryParse(s.Substring(3), out int jedIndex) && !string.IsNullOrWhiteSpace(value))
+                        {
+                            itemUnits[jedIndex] = value;
+                        }
+                        break;
+                    case string s when s.StartsWith("KOL"):
+                        if (int.TryParse(s.Substring(3), out int kolIndex) && !string.IsNullOrWhiteSpace(value))
+                        {
+                            itemQuantities[kolIndex] = ParseDecimal(value);
+                        }
+                        break;
+                    case string s when s.StartsWith("CIJ"):
+                        if (int.TryParse(s.Substring(3), out int cijIndex) && !string.IsNullOrWhiteSpace(value))
+                        {
+                            itemPrices[cijIndex] = ParseDecimal(value);
+                        }
+                        break;
+                    case string s when s.StartsWith("IZN"):
+                        if (int.TryParse(s.Substring(3), out int iznIndex) && !string.IsNullOrWhiteSpace(value))
+                        {
+                            itemAmounts[iznIndex] = ParseDecimal(value);
+                        }
+                        break;
+                }
+            }
+
+            // ✅ Create UtilityInvoiceItem records from parsed data
+            for (int itemIndex = 1; itemIndex <= 5; itemIndex++)
+            {
+                // Only create item if description exists
+                if (itemDescriptions.ContainsKey(itemIndex) && !string.IsNullOrWhiteSpace(itemDescriptions[itemIndex]))
+                {
+                    var item = new UtilityInvoiceItem
+                    {
+                        Description = itemDescriptions[itemIndex],
+                        Unit = itemUnits.ContainsKey(itemIndex) ? itemUnits[itemIndex] : string.Empty,
+                        Quantity = itemQuantities.ContainsKey(itemIndex) ? itemQuantities[itemIndex] : 0,
+                        UnitPrice = itemPrices.ContainsKey(itemIndex) ? itemPrices[itemIndex] : 0,
+                        Amount = itemAmounts.ContainsKey(itemIndex) ? itemAmounts[itemIndex] : 0,
+                        ItemOrder = itemIndex
+                    };
+
+                    invoice.Items.Add(item);
                 }
             }
 
@@ -279,8 +338,14 @@ namespace InventoryManagementAPI.Controllers
 
         private decimal ParseDecimal(string value)
         {
+            if (string.IsNullOrWhiteSpace(value))
+                return 0;
+
             value = value.Replace(",", ".");
-            return decimal.Parse(value, CultureInfo.InvariantCulture);
+            if (decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var result))
+                return result;
+
+            return 0;
         }
     }
 }
