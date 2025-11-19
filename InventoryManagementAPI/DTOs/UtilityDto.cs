@@ -72,6 +72,7 @@ namespace InventoryManagementAPI.DTOs
         public string InvoiceNumber { get; set; } = string.Empty;
         public string CustomerCode { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
+        public string CustomerOib { get; set; } = string.Empty; // ✅ ADDED
         public DateTime IssueDate { get; set; }
         public DateTime DueDate { get; set; }
         public decimal TotalAmount { get; set; }
@@ -80,6 +81,7 @@ namespace InventoryManagementAPI.DTOs
         public int ItemCount { get; set; }
         public int ConsumptionDataCount { get; set; }
         public string? Jir { get; set; } = string.Empty;
+        public string? Zki { get; set; } = string.Empty;
         public DateTime? FiscalizedAt { get; set; }
     }
 
@@ -100,5 +102,53 @@ namespace InventoryManagementAPI.DTOs
         public string CompanyName { get; set; } = string.Empty;
         public bool FiscalizationEnabled { get; set; }
         public bool HasCertificate { get; set; }
+    }
+
+    public class UpdateUtilityInvoiceRequest
+    {
+        // Customer Information
+        public string? CustomerName { get; set; }
+        public string? CustomerAddress { get; set; }
+        public string? CustomerCode { get; set; }
+        public string? CustomerOib { get; set; }
+        public string? PostalCode { get; set; }
+        public string? City { get; set; }
+
+        // Invoice Information
+        public string? InvoiceNumber { get; set; }
+        public string? Building { get; set; }
+        public string? Period { get; set; }
+        public DateTime? IssueDate { get; set; }
+        public DateTime? DueDate { get; set; }
+        public DateTime? ValidityDate { get; set; }
+        public string? BankAccount { get; set; }
+        public string? Model { get; set; }
+
+        // Service Types
+        public string? ServiceTypeHot { get; set; }
+        public string? ServiceTypeHeating { get; set; }
+
+        // Financial Information
+        public decimal? SubTotal { get; set; }
+        public decimal? VatAmount { get; set; }
+        public decimal? TotalAmount { get; set; }
+
+        // Additional Information
+        public string? DebtText { get; set; }
+        public string? ConsumptionText { get; set; }
+
+        // Invoice Items - complete replacement
+        public List<UpdateUtilityInvoiceItemRequest>? Items { get; set; }
+    }
+
+    public class UpdateUtilityInvoiceItemRequest
+    {
+        public int? Id { get; set; } // Null for new items, populated for existing items
+        public string Description { get; set; } = string.Empty;
+        public string Unit { get; set; } = string.Empty;
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal Amount { get; set; }
+        public int ItemOrder { get; set; }
     }
 }

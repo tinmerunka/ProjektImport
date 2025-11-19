@@ -256,7 +256,8 @@ namespace InventoryManagementAPI.Controllers
                     case "KKADRESA": invoice.CustomerAddress = value; break;
                     case "KKPOSBROJ": invoice.PostalCode = value; break;
                     case "KKGRAD": invoice.City = value; break;
-                    case "OIB": invoice.CustomerOib = value; break;
+                    case "KKOIB": invoice.CustomerOib = value; break; // ✅ FIXED: Changed from "OIB" to "KKOIB"
+                    case "OIB": invoice.CustomerOib = value; break;   // ✅ Keep this as fallback for backwards compatibility
                     case "TIP_TV": invoice.ServiceTypeHot = value; break;
                     case "TIP_GRI": invoice.ServiceTypeHeating = value; break;
                     case "UKUPNO_BEZ":
