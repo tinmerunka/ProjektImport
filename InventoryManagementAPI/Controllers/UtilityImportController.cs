@@ -2,6 +2,7 @@
 using InventoryManagementAPI.DTOs;
 using InventoryManagementAPI.DTOs.InventoryManagementAPI.DTOs;
 using InventoryManagementAPI.Models;
+using InventoryManagementAPI.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,15 +21,18 @@ namespace InventoryManagementAPI.Controllers
         private readonly UtilityDbContext _context;
         private readonly ILogger<UtilityImportController> _logger;
         private readonly IWebHostEnvironment _environment;
+        private readonly IKpdCodeService _kpdCodeService;
 
         public UtilityImportController(
             UtilityDbContext context,
             ILogger<UtilityImportController> logger,
-            IWebHostEnvironment environment)
+            IWebHostEnvironment environment,
+            IKpdCodeService kpdCodeService)
         {
             _context = context;
             _logger = logger;
             _environment = environment;
+            _kpdCodeService = kpdCodeService;
         }
 
         [HttpPost("upload")]
@@ -272,7 +276,7 @@ namespace InventoryManagementAPI.Controllers
                     case "DUG_TXT": invoice.DebtText = value; break;
                     case "POTROS_TXT": invoice.ConsumptionText = value; break;
 
-                    // ✅ Parse invoice items (OPIS1-5, JED1-5, KOL1-5, CIJ1-5, IZN1-5)
+                    // Parse invoice items
                     case string s when s.StartsWith("OPIS"):
                         if (int.TryParse(s.Substring(4), out int opisIndex) && !string.IsNullOrWhiteSpace(value))
                         {
@@ -306,23 +310,35 @@ namespace InventoryManagementAPI.Controllers
                 }
             }
 
-            // ✅ Create UtilityInvoiceItem records from parsed data
+            // ✅ Create UtilityInvoiceItem records with automatic KPD code assignment
             for (int itemIndex = 1; itemIndex <= 5; itemIndex++)
             {
-                // Only create item if description exists
                 if (itemDescriptions.ContainsKey(itemIndex) && !string.IsNullOrWhiteSpace(itemDescriptions[itemIndex]))
                 {
+                    var description = itemDescriptions[itemIndex];
+                    
+                    // ✅ Automatically determine KPD code and tax rate based on description
+                    var kpdCode = _kpdCodeService.GetKpdCodeForService(description);
+                    var taxRate = _kpdCodeService.GetDefaultTaxRateForService(description);
+                    var taxCategoryCode = _kpdCodeService.GetTaxCategoryCode(taxRate);
+                    
                     var item = new UtilityInvoiceItem
                     {
-                        Description = itemDescriptions[itemIndex],
+                        Description = description,
                         Unit = itemUnits.ContainsKey(itemIndex) ? itemUnits[itemIndex] : string.Empty,
                         Quantity = itemQuantities.ContainsKey(itemIndex) ? itemQuantities[itemIndex] : 0,
                         UnitPrice = itemPrices.ContainsKey(itemIndex) ? itemPrices[itemIndex] : 0,
                         Amount = itemAmounts.ContainsKey(itemIndex) ? itemAmounts[itemIndex] : 0,
-                        ItemOrder = itemIndex
+                        ItemOrder = itemIndex,
+                        KpdCode = kpdCode,
+                        TaxRate = taxRate,
+                        TaxCategoryCode = taxCategoryCode
                     };
 
                     invoice.Items.Add(item);
+                    
+                    _logger.LogDebug("Item {Index} '{Description}' assigned: KPD={KpdCode}, Tax={TaxRate}%, Category={TaxCategory}",
+                        itemIndex, description, kpdCode, taxRate, taxCategoryCode);
                 }
             }
 

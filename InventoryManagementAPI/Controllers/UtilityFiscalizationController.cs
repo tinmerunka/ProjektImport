@@ -9,7 +9,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace InventoryManagementAPI.Controllers
 {
-
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
@@ -17,23 +16,31 @@ namespace InventoryManagementAPI.Controllers
     {
         private readonly UtilityDbContext _context;
         private readonly IFiscalizationService _fiscalizationService;
+        private readonly IMojeRacunService _mojeRacunService;
         private readonly ILogger<UtilityFiscalizationController> _logger;
 
-        // ✅ Fiscalization date limit (30 days for test environment)
-        private static readonly TimeSpan MaxInvoiceAge = TimeSpan.FromDays(30);
+        // ✅ Fiscalization date limit (30 days for FINA/CIS)
+        private static readonly TimeSpan MaxInvoiceAgeForFina = TimeSpan.FromDays(30);
 
         public UtilityFiscalizationController(
             UtilityDbContext context,
             IFiscalizationService fiscalizationService,
+            IMojeRacunService mojeRacunService,
             ILogger<UtilityFiscalizationController> logger)
         {
             _context = context;
             _fiscalizationService = fiscalizationService;
+            _mojeRacunService = mojeRacunService;
             _logger = logger;
         }
 
-        [HttpPost("{id}/fiscalize")]
-        public async Task<ActionResult<ApiResponse<object>>> FiscalizeUtilityInvoice(int id, [FromBody] FiscalizeUtilityWithCompanyRequest? request = null)
+        /// <summary>
+        /// Fiscalize invoice using FINA 1.0 (CIS) method
+        /// </summary>
+        [HttpPost("{id}/fiscalize-fina")]
+        public async Task<ActionResult<ApiResponse<object>>> FiscalizeWithFina(
+            int id, 
+            [FromBody] FiscalizeUtilityWithCompanyRequest? request = null)
         {
             try
             {
@@ -46,7 +53,7 @@ namespace InventoryManagementAPI.Controllers
                     return NotFound(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = "Utility invoice not found"
+                        Message = "Račun nije pronađen"
                     });
                 }
 
@@ -55,21 +62,20 @@ namespace InventoryManagementAPI.Controllers
                     return BadRequest(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = "Invoice is already fiscalized"
+                        Message = "Račun je već fiskaliziran"
                     });
                 }
 
-                // ✅ CHECK: Invoice age limit
+                // ✅ CHECK: Invoice age limit for FINA
                 var invoiceAge = DateTime.Now - utilityInvoice.IssueDate;
-                if (invoiceAge > MaxInvoiceAge)
+                if (invoiceAge > MaxInvoiceAgeForFina)
                 {
-                    var errorMessage = $"Račun od {utilityInvoice.IssueDate:dd.MM.yyyy} je prestar za fiskalizaciju. " +
-                    $"Račun je star {invoiceAge.Days} dana. Maksimalna dopuštena starost je {MaxInvoiceAge.Days} dana.";
+                    var errorMessage = $"Račun od {utilityInvoice.IssueDate:dd.MM.yyyy} je prestar za FINA fiskalizaciju. " +
+                        $"Račun je star {invoiceAge.Days} dana. Maksimalna dopuštena starost je {MaxInvoiceAgeForFina.Days} dana.";
 
-                    _logger.LogWarning("Cannot fiscalize invoice {InvoiceNumber}: {Message}",
+                    _logger.LogWarning("Cannot fiscalize invoice {InvoiceNumber} with FINA: {Message}",
                         utilityInvoice.InvoiceNumber, errorMessage);
 
-                    // Update invoice status
                     utilityInvoice.FiscalizationStatus = "too_old";
                     utilityInvoice.FiscalizationError = errorMessage;
                     utilityInvoice.UpdatedAt = DateTime.UtcNow;
@@ -78,110 +84,309 @@ namespace InventoryManagementAPI.Controllers
                     return BadRequest(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = errorMessage,
-                        Data = new
-                        {
-                            InvoiceId = id,
-                            InvoiceNumber = utilityInvoice.InvoiceNumber,
-                            InvoiceDate = utilityInvoice.IssueDate.ToString("yyyy-MM-dd"),
-                            AgeDays = invoiceAge.Days,
-                            MaxAgeDays = MaxInvoiceAge.Days,
-                            FiscalizationStatus = "too_old"
-                        }
+                        Message = errorMessage
                     });
                 }
 
-                // Get company profile for fiscalization
-                CompanyProfile? company;
-                if (request?.CompanyId.HasValue == true)
-                {
-                    company = await _context.CompanyProfiles.FindAsync(request.CompanyId.Value);
-                }
-                else
-                {
-                    // Use first available company with fiscalization enabled
-                    company = await _context.CompanyProfiles
-                        .Where(c => c.FiscalizationEnabled)
-                        .FirstOrDefaultAsync();
-                }
-
+                // Get company profile
+                var company = await GetCompanyForFiscalization(request?.CompanyId, fiscalizationType: "fina");
                 if (company == null)
                 {
                     return BadRequest(new ApiResponse<object>
                     {
                         Success = false,
-                        Message = "No company profile found for fiscalization. Please create a company profile with fiscalization enabled first."
+                        Message = "Nije pronađen profil tvrtke s omogućenom FINA fiskalizacijom"
                     });
                 }
 
-                if (!company.FiscalizationEnabled)
-                {
-                    return BadRequest(new ApiResponse<object>
-                    {
-                        Success = false,
-                        Message = "Fiscalization is not enabled for the selected company profile."
-                    });
-                }
-
-                if (string.IsNullOrEmpty(company.FiscalizationCertificatePath))
-                {
-                    return BadRequest(new ApiResponse<object>
-                    {
-                        Success = false,
-                        Message = "No fiscalization certificate found for the selected company. Please upload a certificate first."
-                    });
-                }
-
-                // Convert UtilityInvoice to Invoice format for fiscalization service
+                // Convert and fiscalize
                 var invoice = ConvertUtilityInvoiceToInvoice(utilityInvoice);
+                var result = await _fiscalizationService.FiscalizeInvoiceAsync(invoice, company);
 
-                // Fiscalize the invoice
-                var fiscalizationResult = await _fiscalizationService.FiscalizeInvoiceAsync(invoice, company);
-
-                // Update utility invoice with fiscalization results
-                if (fiscalizationResult.Success)
+                // Update invoice
+                if (result.Success)
                 {
                     utilityInvoice.FiscalizationStatus = "fiscalized";
-                    utilityInvoice.Jir = fiscalizationResult.Jir;
-                    utilityInvoice.Zki = fiscalizationResult.Zki;
+                    utilityInvoice.FiscalizationMethod = "fina";
+                    utilityInvoice.Jir = result.Jir;
+                    utilityInvoice.Zki = result.Zki;
                     utilityInvoice.FiscalizedAt = DateTime.UtcNow;
                     utilityInvoice.FiscalizationError = null;
-                    utilityInvoice.UpdatedAt = DateTime.UtcNow;
                 }
                 else
                 {
                     utilityInvoice.FiscalizationStatus = "error";
-                    utilityInvoice.FiscalizationError = fiscalizationResult.Message;
-                    utilityInvoice.UpdatedAt = DateTime.UtcNow;
+                    utilityInvoice.FiscalizationError = result.Message;
                 }
 
+                utilityInvoice.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
                 return Ok(new ApiResponse<object>
                 {
-                    Success = fiscalizationResult.Success,
-                    Message = fiscalizationResult.Success
-                        ? "Utility invoice fiscalized successfully"
-                        : $"Fiscalization failed: {fiscalizationResult.Message}",
+                    Success = result.Success,
+                    Message = result.Success 
+                        ? "Račun uspješno fiskaliziran preko FINA sustava" 
+                        : $"Fiskalizacija neuspješna: {result.Message}",
                     Data = new
                     {
                         InvoiceId = id,
-                        CompanyUsed = company.CompanyName,
+                        Method = "fina",
                         FiscalizationStatus = utilityInvoice.FiscalizationStatus,
                         Jir = utilityInvoice.Jir,
                         Zki = utilityInvoice.Zki,
-                        FiscalizedAt = utilityInvoice.FiscalizedAt,
-                        Error = utilityInvoice.FiscalizationError
+                        FiscalizedAt = utilityInvoice.FiscalizedAt
                     }
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fiscalizing utility invoice {Id}", id);
+                _logger.LogError(ex, "Error fiscalizing with FINA for invoice {Id}", id);
                 return StatusCode(500, new ApiResponse<object>
                 {
                     Success = false,
-                    Message = "An error occurred while fiscalizing the invoice"
+                    Message = "Došlo je do greške prilikom fiskalizacije"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Fiscalize invoice using mojE-Račun 2.0 (UBL) method
+        /// </summary>
+        [HttpPost("{id}/fiscalize-moje-racun")]
+        public async Task<ActionResult<ApiResponse<object>>> FiscalizeWithMojeRacun(
+            int id,
+            [FromBody] FiscalizeUtilityWithCompanyRequest? request = null)
+        {
+            try
+            {
+                var utilityInvoice = await _context.UtilityInvoices
+                    .Include(u => u.Items)
+                    .FirstOrDefaultAsync(u => u.Id == id);
+
+                if (utilityInvoice == null)
+                {
+                    return NotFound(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Račun nije pronađen"
+                    });
+                }
+
+                if (utilityInvoice.FiscalizationStatus == "fiscalized")
+                {
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Račun je već fiskaliziran"
+                    });
+                }
+
+                // Get company profile
+                var company = await GetCompanyForFiscalization(request?.CompanyId, fiscalizationType: "moje-racun");
+                if (company == null)
+                {
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Nije pronađen profil tvrtke s omogućenim mojE-Račun sustavom"
+                    });
+                }
+
+                // Fiscalize via mojE-Račun
+                var result = await _mojeRacunService.SubmitInvoiceAsync(utilityInvoice, company);
+
+                // Update invoice
+                if (result.Success)
+                {
+                    utilityInvoice.FiscalizationStatus = "fiscalized";
+                    utilityInvoice.FiscalizationMethod = "moje-racun";
+                    utilityInvoice.MojeRacunInvoiceId = result.InvoiceId;
+                    utilityInvoice.MojeRacunQrCodeUrl = result.QrCodeUrl;
+                    utilityInvoice.MojeRacunPdfUrl = result.PdfUrl;
+                    utilityInvoice.MojeRacunStatus = result.Status;
+                    utilityInvoice.MojeRacunSubmittedAt = result.SubmittedAt;
+                    utilityInvoice.FiscalizedAt = DateTime.UtcNow;
+                    utilityInvoice.FiscalizationError = null;
+                }
+                else
+                {
+                    utilityInvoice.FiscalizationStatus = "error";
+                    utilityInvoice.FiscalizationError = result.Message;
+                }
+
+                utilityInvoice.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = result.Success,
+                    Message = result.Success
+                        ? "Račun uspješno poslan u mojE-Račun sustav"
+                        : $"Slanje neuspješno: {result.Message}",
+                    Data = new
+                    {
+                        InvoiceId = id,
+                        Method = "moje-racun",
+                        FiscalizationStatus = utilityInvoice.FiscalizationStatus,
+                        MojeRacunInvoiceId = utilityInvoice.MojeRacunInvoiceId,
+                        QrCodeUrl = utilityInvoice.MojeRacunQrCodeUrl,
+                        PdfUrl = utilityInvoice.MojeRacunPdfUrl,
+                        Status = utilityInvoice.MojeRacunStatus,
+                        SubmittedAt = utilityInvoice.MojeRacunSubmittedAt
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fiscalizing with mojE-Račun for invoice {Id}", id);
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "Došlo je do greške prilikom slanja u mojE-Račun"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Get available fiscalization methods for a company
+        /// </summary>
+        [HttpGet("methods")]
+        public async Task<ActionResult<ApiResponse<object>>> GetAvailableMethods([FromQuery] int? companyId = null)
+        {
+            try
+            {
+                CompanyProfile? company;
+                if (companyId.HasValue)
+                {
+                    company = await _context.CompanyProfiles.FindAsync(companyId.Value);
+                }
+                else
+                {
+                    company = await _context.CompanyProfiles.FirstOrDefaultAsync();
+                }
+
+                if (company == null)
+                {
+                    return NotFound(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Company profile not found"
+                    });
+                }
+
+                var methods = new List<object>();
+
+                if (company.FiscalizationEnabled && !string.IsNullOrEmpty(company.FiscalizationCertificatePath))
+                {
+                    methods.Add(new
+                    {
+                        Id = "fina",
+                        Name = "Fiskalizacija 1.0 (FINA/CIS)",
+                        Description = "Klasični sustav fiskalizacije",
+                        Available = true,
+                        Configured = true,
+                        MaxAgeDays = MaxInvoiceAgeForFina.Days,
+                        Features = new[] { "JIR kod", "ZKI kod", "Trenutna fiskalizacija" }
+                    });
+                }
+
+                var mojeRacunConfigured = !string.IsNullOrEmpty(company.MojeRacunClientId) && 
+                                         !string.IsNullOrEmpty(company.MojeRacunClientSecret);
+
+                if (company.MojeRacunEnabled)
+                {
+                    methods.Add(new
+                    {
+                        Id = "moje-racun",
+                        Name = "mojE-Račun 2.0",
+                        Description = "Novi sustav e-računa Porezne uprave",
+                        Available = true,
+                        Configured = mojeRacunConfigured,
+                        Environment = company.MojeRacunEnvironment ?? "test",
+                        AuthMethod = "username/password",
+                        MaxAgeDays = (int?)null,
+                        Features = new[] { "UBL format", "Bez vremenskog ograničenja", "Automatska dostava", "QR kod", "PDF generiranje" }
+                    });
+                }
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = true,
+                    Message = $"Found {methods.Count} available fiscalization method(s)",
+                    Data = new
+                    {
+                        CompanyId = company.Id,
+                        CompanyName = company.CompanyName,
+                        AvailableMethods = methods
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting available methods");
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "An error occurred"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Test mojE-Račun connection with configured credentials
+        /// </summary>
+        [HttpPost("test-moje-racun")]
+        public async Task<ActionResult<ApiResponse<object>>> TestMojeRacunConnection(
+            [FromBody] FiscalizeUtilityWithCompanyRequest? request = null)
+        {
+            try
+            {
+                var company = await GetCompanyForFiscalization(request?.CompanyId, fiscalizationType: "moje-racun");
+                
+                if (company == null)
+                {
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Nije pronađen profil tvrtke s omogućenim mojE-Račun sustavom"
+                    });
+                }
+
+                if (string.IsNullOrEmpty(company.MojeRacunClientId) || string.IsNullOrEmpty(company.MojeRacunClientSecret))
+                {
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "mojE-Račun credentials (username/password) are not configured"
+                    });
+                }
+
+                // Test connection
+                var result = await _mojeRacunService.TestConnectionAsync(company);
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = result.Success,
+                    Message = result.Message,
+                    Data = new
+                    {
+                        CompanyId = company.Id,
+                        CompanyName = company.CompanyName,
+                        Environment = company.MojeRacunEnvironment,
+                        Username = company.MojeRacunClientId,
+                        ConnectionStatus = result.Status,
+                        TestedAt = DateTime.UtcNow
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error testing mojE-Račun connection");
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = $"Connection test failed: {ex.Message}"
                 });
             }
         }
@@ -229,9 +434,9 @@ namespace InventoryManagementAPI.Controllers
                     {
                         // ✅ CHECK: Invoice age for each invoice in batch
                         var invoiceAge = DateTime.Now - utilityInvoice.IssueDate;
-                        if (invoiceAge > MaxInvoiceAge)
+                        if (invoiceAge > MaxInvoiceAgeForFina)
                         {
-                            var errorMessage = $"Invoice is {invoiceAge.Days} days old (max: {MaxInvoiceAge.Days} days)";
+                            var errorMessage = $"Invoice is {invoiceAge.Days} days old (max: {MaxInvoiceAgeForFina.Days} days)";
 
                             utilityInvoice.FiscalizationStatus = "too_old";
                             utilityInvoice.FiscalizationError = errorMessage;
@@ -321,7 +526,7 @@ namespace InventoryManagementAPI.Controllers
                         SuccessCount = successCount,
                         ErrorCount = errorCount,
                         TooOldCount = tooOldCount,
-                        MaxAgeDays = MaxInvoiceAge.Days,
+                        MaxAgeDays = MaxInvoiceAgeForFina.Days,
                         Results = results
                     }
                 });
@@ -371,13 +576,38 @@ namespace InventoryManagementAPI.Controllers
             }
         }
 
+        private async Task<CompanyProfile?> GetCompanyForFiscalization(int? companyId, string fiscalizationType)
+        {
+            CompanyProfile? company;
+
+            if (companyId.HasValue)
+            {
+                company = await _context.CompanyProfiles.FindAsync(companyId.Value);
+            }
+            else
+            {
+                if (fiscalizationType == "fina")
+                {
+                    company = await _context.CompanyProfiles
+                        .Where(c => c.FiscalizationEnabled && !string.IsNullOrEmpty(c.FiscalizationCertificatePath))
+                        .FirstOrDefaultAsync();
+                }
+                else // moje-racun
+                {
+                    company = await _context.CompanyProfiles
+                        .Where(c => c.MojeRacunEnabled)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            return company;
+        }
+
         private Invoice ConvertUtilityInvoiceToInvoice(UtilityInvoice utilityInvoice)
         {
-            _logger.LogInformation("=== CONVERTING INVOICE {InvoiceNumber} ===", utilityInvoice.InvoiceNumber);
-            _logger.LogInformation("Invoice Date: {IssueDate}, Age: {Age} days",
-                utilityInvoice.IssueDate, (DateTime.Now - utilityInvoice.IssueDate).Days);
+            _logger.LogInformation("Converting invoice {InvoiceNumber} for FINA fiscalization", 
+                utilityInvoice.InvoiceNumber);
 
-            // Handle customer OIB properly
             string? customerOib = null;
             if (!string.IsNullOrEmpty(utilityInvoice.CustomerOib) &&
                 utilityInvoice.CustomerOib != "0" &&
@@ -389,16 +619,16 @@ namespace InventoryManagementAPI.Controllers
                 }
             }
 
-            // Use the EXACT values from the database
             decimal totalAmount = utilityInvoice.TotalAmount;
             decimal vatAmount = utilityInvoice.VatAmount;
             decimal subTotal = utilityInvoice.SubTotal;
 
-            // Verify the math makes sense
             var calculatedTotal = subTotal + vatAmount;
             if (Math.Abs(calculatedTotal - totalAmount) > 0.01m)
             {
-                _logger.LogWarning("Math doesn't add up! Adjusting values...");
+                _logger.LogWarning("Adjusting financial values for invoice {InvoiceNumber}", 
+                    utilityInvoice.InvoiceNumber);
+                
                 if (vatAmount > 0)
                 {
                     subTotal = Math.Round(totalAmount / 1.05m, 2);
@@ -411,13 +641,10 @@ namespace InventoryManagementAPI.Controllers
                 }
             }
 
-            // Calculate tax rate
             decimal taxRate = 0.00m;
             if (vatAmount > 0 && subTotal > 0)
             {
                 var calculatedRate = (vatAmount / subTotal) * 100;
-
-                // Round to nearest valid Croatian VAT rate
                 if (calculatedRate <= 2.5m) taxRate = 0.00m;
                 else if (calculatedRate <= 7.5m) taxRate = 5.00m;
                 else if (calculatedRate <= 19m) taxRate = 13.00m;
@@ -432,12 +659,9 @@ namespace InventoryManagementAPI.Controllers
                 Status = InvoiceStatus.Paid,
                 Currency = "EUR",
                 IssueLocation = utilityInvoice.Building,
-
-                // ✅ USE ORIGINAL INVOICE DATE (not current date)
                 IssueDate = utilityInvoice.IssueDate,
                 DueDate = utilityInvoice.DueDate,
                 DeliveryDate = utilityInvoice.IssueDate,
-
                 CustomerId = 0,
                 CustomerName = utilityInvoice.CustomerName,
                 CustomerAddress = utilityInvoice.CustomerAddress,

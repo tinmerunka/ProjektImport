@@ -440,6 +440,120 @@ namespace InventoryManagementAPI.Controllers
                 });
             }
         }
+
+        /// <summary>
+        /// Configure mojE-Račun credentials (username/password/softwareId)
+        /// </summary>
+        [HttpPut("{id}/moje-racun")]
+        public async Task<ActionResult<ApiResponse<object>>> ConfigureMojeRacun(int id, [FromBody] MojeRacunConfigRequest request)
+        {
+            try
+            {
+                var company = await _context.CompanyProfiles.FindAsync(id);
+                if (company == null)
+                {
+                    return NotFound(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Company profile not found"
+                    });
+                }
+
+                // Update mojE-Račun settings
+                company.MojeRacunEnabled = request.Enabled;
+                company.MojeRacunEnvironment = request.Environment ?? "test";
+                
+                // Store credentials (⚠️ WARNING: In production, encrypt these!)
+                if (!string.IsNullOrEmpty(request.Username))
+                {
+                    company.MojeRacunClientId = request.Username;
+                }
+
+                if (!string.IsNullOrEmpty(request.Password))
+                {
+                    // ⚠️ TODO: Encrypt password before storing
+                    company.MojeRacunClientSecret = request.Password;
+                    _logger.LogWarning("Password stored in plain text! Implement encryption for production!");
+                }
+
+                if (!string.IsNullOrEmpty(request.SoftwareId))
+                {
+                    // Store SoftwareId in MojeRacunApiKey field
+                    company.MojeRacunApiKey = request.SoftwareId;
+                }
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = true,
+                    Message = "mojE-Račun configuration updated successfully",
+                    Data = new
+                    {
+                        Enabled = company.MojeRacunEnabled,
+                        Environment = company.MojeRacunEnvironment,
+                        Username = company.MojeRacunClientId,
+                        SoftwareId = company.MojeRacunApiKey,
+                        HasPassword = !string.IsNullOrEmpty(company.MojeRacunClientSecret)
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error configuring mojE-Račun for company {Id}", id);
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "An error occurred while configuring mojE-Račun"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Get mojE-Račun configuration status (without exposing password)
+        /// </summary>
+        [HttpGet("{id}/moje-racun")]
+        public async Task<ActionResult<ApiResponse<object>>> GetMojeRacunConfig(int id)
+        {
+            try
+            {
+                var company = await _context.CompanyProfiles.FindAsync(id);
+                if (company == null)
+                {
+                    return NotFound(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Company profile not found"
+                    });
+                }
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = true,
+                    Message = "mojE-Račun configuration retrieved",
+                    Data = new
+                    {
+                        Enabled = company.MojeRacunEnabled,
+                        Environment = company.MojeRacunEnvironment ?? "test",
+                        Username = company.MojeRacunClientId,
+                        SoftwareId = company.MojeRacunApiKey,
+                        HasPassword = !string.IsNullOrEmpty(company.MojeRacunClientSecret),
+                        Configured = !string.IsNullOrEmpty(company.MojeRacunClientId) && 
+                                   !string.IsNullOrEmpty(company.MojeRacunClientSecret) &&
+                                   !string.IsNullOrEmpty(company.MojeRacunApiKey)
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving mojE-Račun config for company {Id}", id);
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "An error occurred"
+                });
+            }
+        }
     }
 
     public class FiscalizationSettingsRequest
@@ -459,5 +573,29 @@ namespace InventoryManagementAPI.Controllers
 
         [StringLength(50)]
         public string? InvoiceParam2 { get; set; }
+    }
+
+    public class MojeRacunConfigRequest
+    {
+        public bool Enabled { get; set; } = true;
+
+        [StringLength(20)]
+        public string Environment { get; set; } = "test"; // "test" or "production"
+
+        [Required]
+        [StringLength(200)]
+        public string Username { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(500)]
+        public string Password { get; set; } = string.Empty;
+
+        /// <summary>
+        /// SoftwareId (required by mojE-Račun API)
+        /// Example: "Test-001" for demo/testing
+        /// </summary>
+        [Required]
+        [StringLength(100)]
+        public string SoftwareId { get; set; } = string.Empty;
     }
 }

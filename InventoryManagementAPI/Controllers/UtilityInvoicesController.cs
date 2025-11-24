@@ -80,13 +80,16 @@ namespace InventoryManagementAPI.Controllers
                         InvoiceNumber = u.InvoiceNumber,
                         CustomerCode = u.CustomerCode,
                         CustomerName = u.CustomerName,
-                        CustomerOib = u.CustomerOib, // ✅ ADDED
+                        CustomerOib = u.CustomerOib,
                         IssueDate = u.IssueDate,
                         DueDate = u.DueDate,
                         TotalAmount = u.TotalAmount,
                         FiscalizationStatus = u.FiscalizationStatus,
+                        FiscalizationMethod = u.FiscalizationMethod,
                         Jir = u.Jir,
                         Zki = u.Zki,
+                        MojeRacunInvoiceId = u.MojeRacunInvoiceId,
+                        MojeRacunStatus = u.MojeRacunStatus,
                         FiscalizedAt = u.FiscalizedAt,
                         CreatedAt = u.CreatedAt,
                         ItemCount = u.Items.Count,
@@ -177,13 +180,16 @@ namespace InventoryManagementAPI.Controllers
                         InvoiceNumber = u.InvoiceNumber,
                         CustomerCode = u.CustomerCode,
                         CustomerName = u.CustomerName,
-                        CustomerOib = u.CustomerOib, // ✅ ADDED
+                        CustomerOib = u.CustomerOib,
                         IssueDate = u.IssueDate,
                         DueDate = u.DueDate,
                         TotalAmount = u.TotalAmount,
                         FiscalizationStatus = u.FiscalizationStatus,
+                        FiscalizationMethod = u.FiscalizationMethod,
                         Jir = u.Jir,
                         Zki = u.Zki,
+                        MojeRacunInvoiceId = u.MojeRacunInvoiceId,
+                        MojeRacunStatus = u.MojeRacunStatus,
                         FiscalizedAt = u.FiscalizedAt,
                         CreatedAt = u.CreatedAt,
                         ItemCount = u.Items.Count,
@@ -273,13 +279,16 @@ namespace InventoryManagementAPI.Controllers
                         InvoiceNumber = u.InvoiceNumber,
                         CustomerCode = u.CustomerCode,
                         CustomerName = u.CustomerName,
-                        CustomerOib = u.CustomerOib, // ✅ ADDED
+                        CustomerOib = u.CustomerOib,
                         IssueDate = u.IssueDate,
                         DueDate = u.DueDate,
                         TotalAmount = u.TotalAmount,
                         FiscalizationStatus = u.FiscalizationStatus,
+                        FiscalizationMethod = u.FiscalizationMethod,
                         Jir = u.Jir,
                         Zki = u.Zki,
+                        MojeRacunInvoiceId = u.MojeRacunInvoiceId,
+                        MojeRacunStatus = u.MojeRacunStatus,
                         FiscalizedAt = u.FiscalizedAt,
                         CreatedAt = u.CreatedAt,
                         ItemCount = u.Items.Count,
@@ -356,13 +365,27 @@ namespace InventoryManagementAPI.Controllers
                     TotalAmount = invoice.TotalAmount,
                     DebtText = invoice.DebtText,
                     ConsumptionText = invoice.ConsumptionText,
+                    
+                    // Fiscalization fields
                     FiscalizationStatus = invoice.FiscalizationStatus,
-                    Jir = invoice.Jir,
-                    Zki = invoice.Zki,
+                    FiscalizationMethod = invoice.FiscalizationMethod,
                     FiscalizedAt = invoice.FiscalizedAt,
                     FiscalizationError = invoice.FiscalizationError,
+                    
+                    // FINA 1.0 fields
+                    Jir = invoice.Jir,
+                    Zki = invoice.Zki,
+                    
+                    // mojE-Račun 2.0 fields
+                    MojeRacunInvoiceId = invoice.MojeRacunInvoiceId,
+                    MojeRacunQrCodeUrl = invoice.MojeRacunQrCodeUrl,
+                    MojeRacunPdfUrl = invoice.MojeRacunPdfUrl,
+                    MojeRacunSubmittedAt = invoice.MojeRacunSubmittedAt,
+                    MojeRacunStatus = invoice.MojeRacunStatus,
+                    
                     CreatedAt = invoice.CreatedAt,
                     UpdatedAt = invoice.UpdatedAt,
+                    
                     Items = invoice.Items.Select(i => new UtilityInvoiceItemResponse
                     {
                         Id = i.Id,
@@ -371,8 +394,12 @@ namespace InventoryManagementAPI.Controllers
                         Quantity = i.Quantity,
                         UnitPrice = i.UnitPrice,
                         Amount = i.Amount,
-                        ItemOrder = i.ItemOrder
+                        ItemOrder = i.ItemOrder,
+                        KpdCode = i.KpdCode,
+                        TaxRate = i.TaxRate,
+                        TaxCategoryCode = i.TaxCategoryCode
                     }).ToList(),
+                    
                     ConsumptionData = invoice.ConsumptionData.Select(c => new UtilityConsumptionDataResponse
                     {
                         Id = c.Id,
@@ -567,13 +594,16 @@ namespace InventoryManagementAPI.Controllers
                         InvoiceNumber = u.InvoiceNumber,
                         CustomerCode = u.CustomerCode,
                         CustomerName = u.CustomerName,
-                        CustomerOib = u.CustomerOib, // ✅ ADDED
+                        CustomerOib = u.CustomerOib,
                         IssueDate = u.IssueDate,
                         DueDate = u.DueDate,
                         TotalAmount = u.TotalAmount,
                         FiscalizationStatus = u.FiscalizationStatus,
+                        FiscalizationMethod = u.FiscalizationMethod,
                         Jir = u.Jir,
                         Zki = u.Zki,
+                        MojeRacunInvoiceId = u.MojeRacunInvoiceId,
+                        MojeRacunStatus = u.MojeRacunStatus,
                         FiscalizedAt = u.FiscalizedAt,
                         CreatedAt = u.CreatedAt,
                         ItemCount = u.Items.Count,
@@ -831,8 +861,7 @@ namespace InventoryManagementAPI.Controllers
                     DebtText = updatedInvoice.DebtText,
                     ConsumptionText = updatedInvoice.ConsumptionText,
                     FiscalizationStatus = updatedInvoice.FiscalizationStatus,
-                    Jir = updatedInvoice.Jir,
-                    Zki = updatedInvoice.Zki,
+                    FiscalizationMethod = updatedInvoice.FiscalizationMethod,
                     FiscalizedAt = updatedInvoice.FiscalizedAt,
                     FiscalizationError = updatedInvoice.FiscalizationError,
                     CreatedAt = updatedInvoice.CreatedAt,

@@ -11,6 +11,7 @@ namespace InventoryManagementAPI.Models
         [Required]
         [StringLength(36)]
         public string? ImportBatchId { get; set; }
+        
         // Building/Location Info
         [Required]
         [StringLength(200)]
@@ -59,6 +60,7 @@ namespace InventoryManagementAPI.Models
         // Service Type Info
         [StringLength(100)]
         public string ServiceTypeHot { get; set; } = string.Empty;
+        
         [StringLength(100)]
         public string ServiceTypeHeating { get; set; } = string.Empty;
 
@@ -79,20 +81,75 @@ namespace InventoryManagementAPI.Models
         [StringLength(1000)]
         public string ConsumptionText { get; set; } = string.Empty;
 
-        // Fiscalization fields
+        // ========================================
+        // FISCALIZATION FIELDS (Common)
+        // ========================================
+        
+        /// <summary>
+        /// Fiscalization status: not_required, fiscalized, error, too_old
+        /// </summary>
         [StringLength(50)]
         public string FiscalizationStatus { get; set; } = "not_required";
 
-        [StringLength(100)]
-        public string? Jir { get; set; }
-
-        [StringLength(100)]
-        public string? Zki { get; set; }
+        /// <summary>
+        /// Which fiscalization method was used: null, "fina", "moje-racun"
+        /// </summary>
+        [StringLength(20)]
+        public string? FiscalizationMethod { get; set; }
 
         public DateTime? FiscalizedAt { get; set; }
 
         [StringLength(1000)]
         public string? FiscalizationError { get; set; }
+
+        // ========================================
+        // FINA 1.0 (CIS) FIELDS
+        // ========================================
+        
+        /// <summary>
+        /// JIR - Jedinstveni identifikator računa (FINA)
+        /// </summary>
+        [StringLength(100)]
+        public string? Jir { get; set; }
+
+        /// <summary>
+        /// ZKI - Zaštitni kod izdavatelja (FINA)
+        /// </summary>
+        [StringLength(100)]
+        public string? Zki { get; set; }
+
+        // ========================================
+        // mojE-Račun 2.0 (UBL) FIELDS
+        // ========================================
+        
+        /// <summary>
+        /// Invoice UUID from mojE-Račun system
+        /// </summary>
+        [StringLength(100)]
+        public string? MojeRacunInvoiceId { get; set; }
+
+        /// <summary>
+        /// QR code URL for mojE-Račun invoice
+        /// </summary>
+        [StringLength(500)]
+        public string? MojeRacunQrCodeUrl { get; set; }
+
+        /// <summary>
+        /// PDF download URL from mojE-Račun
+        /// </summary>
+        [StringLength(500)]
+        public string? MojeRacunPdfUrl { get; set; }
+
+        /// <summary>
+        /// When the invoice was submitted to mojE-Račun
+        /// </summary>
+        public DateTime? MojeRacunSubmittedAt { get; set; }
+
+        /// <summary>
+        /// mojE-Račun status: pending, accepted, rejected, delivered
+        /// </summary>
+        [StringLength(50)]
+        public string? MojeRacunStatus { get; set; }
 
         // Timestamps
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

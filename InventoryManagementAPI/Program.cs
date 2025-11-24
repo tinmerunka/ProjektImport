@@ -22,9 +22,20 @@ builder.Services.AddDbContext<UtilityDbContext>(options =>
 // Register JWT Service
 builder.Services.AddScoped<IJwtService, JwtService>();
 
-// Register Fiscalization Service (no HttpClient needed - creates its own)
+// ========================================
+// FISCALIZATION SERVICES
+// ========================================
+
+// Register FINA 1.0 Fiscalization Service (CIS)
 builder.Services.AddScoped<IFiscalizationService, FiscalizationService>();
 
+// Register mojE-Raèun 2.0 Fiscalization Service (UBL)
+builder.Services.AddScoped<IMojeRacunService, MojeRacunService>();
+
+// Register KPD Code Service (for product classification)
+builder.Services.AddScoped<IKpdCodeService, KpdCodeService>();
+
+// Register QR Code Service
 builder.Services.AddScoped<IQRCodeService, QRCodeService>();
 
 

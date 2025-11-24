@@ -26,11 +26,24 @@ namespace InventoryManagementAPI.DTOs
         public decimal TotalAmount { get; set; }
         public string DebtText { get; set; } = string.Empty;
         public string ConsumptionText { get; set; } = string.Empty;
+        
+        // Fiscalization fields
         public string FiscalizationStatus { get; set; } = string.Empty;
-        public string? Jir { get; set; }
-        public string? Zki { get; set; }
+        public string? FiscalizationMethod { get; set; } // "fina" or "moje-racun"
         public DateTime? FiscalizedAt { get; set; }
         public string? FiscalizationError { get; set; }
+        
+        // FINA 1.0 fields
+        public string? Jir { get; set; }
+        public string? Zki { get; set; }
+        
+        // mojE-Račun 2.0 fields
+        public string? MojeRacunInvoiceId { get; set; }
+        public string? MojeRacunQrCodeUrl { get; set; }
+        public string? MojeRacunPdfUrl { get; set; }
+        public DateTime? MojeRacunSubmittedAt { get; set; }
+        public string? MojeRacunStatus { get; set; }
+        
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
         public List<UtilityInvoiceItemResponse> Items { get; set; } = new();
@@ -46,6 +59,11 @@ namespace InventoryManagementAPI.DTOs
         public decimal UnitPrice { get; set; }
         public decimal Amount { get; set; }
         public int ItemOrder { get; set; }
+        
+        // mojE-Račun fields
+        public string KpdCode { get; set; } = string.Empty;
+        public decimal TaxRate { get; set; }
+        public string TaxCategoryCode { get; set; } = string.Empty;
     }
 
     public class UtilityConsumptionDataResponse
@@ -72,16 +90,24 @@ namespace InventoryManagementAPI.DTOs
         public string InvoiceNumber { get; set; } = string.Empty;
         public string CustomerCode { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
-        public string CustomerOib { get; set; } = string.Empty; // ✅ ADDED
+        public string CustomerOib { get; set; } = string.Empty;
         public DateTime IssueDate { get; set; }
         public DateTime DueDate { get; set; }
         public decimal TotalAmount { get; set; }
         public string FiscalizationStatus { get; set; } = string.Empty;
+        public string? FiscalizationMethod { get; set; } // "fina" or "moje-racun"
         public DateTime CreatedAt { get; set; }
         public int ItemCount { get; set; }
         public int ConsumptionDataCount { get; set; }
-        public string? Jir { get; set; } = string.Empty;
-        public string? Zki { get; set; } = string.Empty;
+        
+        // FINA 1.0
+        public string? Jir { get; set; }
+        public string? Zki { get; set; }
+        
+        // mojE-Račun 2.0
+        public string? MojeRacunInvoiceId { get; set; }
+        public string? MojeRacunStatus { get; set; }
+        
         public DateTime? FiscalizedAt { get; set; }
     }
 
@@ -102,6 +128,7 @@ namespace InventoryManagementAPI.DTOs
         public string CompanyName { get; set; } = string.Empty;
         public bool FiscalizationEnabled { get; set; }
         public bool HasCertificate { get; set; }
+        public bool MojeRacunEnabled { get; set; }
     }
 
     public class UpdateUtilityInvoiceRequest
@@ -143,12 +170,17 @@ namespace InventoryManagementAPI.DTOs
 
     public class UpdateUtilityInvoiceItemRequest
     {
-        public int? Id { get; set; } // Null for new items, populated for existing items
+        public int? Id { get; set; }
         public string Description { get; set; } = string.Empty;
         public string Unit { get; set; } = string.Empty;
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal Amount { get; set; }
         public int ItemOrder { get; set; }
+        
+        // mojE-Račun fields (optional in update)
+        public string? KpdCode { get; set; }
+        public decimal? TaxRate { get; set; }
+        public string? TaxCategoryCode { get; set; }
     }
 }
