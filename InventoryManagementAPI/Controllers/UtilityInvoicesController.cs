@@ -22,9 +22,7 @@ namespace InventoryManagementAPI.Controllers
             _logger = logger;
         }
 
-        /// <summary>
         /// Base endpoint - Get ALL utility invoices (for import history and fallback)
-        /// </summary>
         [HttpGet]
         public async Task<ActionResult<ApiResponse<object>>> GetUtilityInvoices(
             [FromQuery] string? searchTerm = null,
@@ -122,9 +120,7 @@ namespace InventoryManagementAPI.Controllers
             }
         }
 
-        /// <summary>
         /// Get all utility invoices from all imports with filtering and pagination
-        /// </summary>
         [HttpGet("all-invoices")]
         public async Task<ActionResult<ApiResponse<object>>> GetAllUtilityInvoices(
             [FromQuery] string? searchTerm = null,
@@ -222,9 +218,7 @@ namespace InventoryManagementAPI.Controllers
             }
         }
 
-        /// <summary>
         /// Get only the invoices from the latest CSV import
-        /// </summary>
         [HttpGet("imported-invoices")]
         public async Task<ActionResult<ApiResponse<object>>> GetLatestImportedInvoices(
             [FromQuery] int page = 1,
@@ -378,8 +372,6 @@ namespace InventoryManagementAPI.Controllers
                     
                     // mojE-Račun 2.0 fields
                     MojeRacunInvoiceId = invoice.MojeRacunInvoiceId,
-                    MojeRacunQrCodeUrl = invoice.MojeRacunQrCodeUrl,
-                    MojeRacunPdfUrl = invoice.MojeRacunPdfUrl,
                     MojeRacunSubmittedAt = invoice.MojeRacunSubmittedAt,
                     MojeRacunStatus = invoice.MojeRacunStatus,
                     
@@ -526,9 +518,7 @@ namespace InventoryManagementAPI.Controllers
             }
         }
 
-        /// <summary>
         /// Get all invoices from a specific import batch
-        /// </summary>
         [HttpGet("by-batch/{batchId}")]
         public async Task<ActionResult<ApiResponse<object>>> GetInvoicesByBatch(
             string batchId,
@@ -874,7 +864,10 @@ namespace InventoryManagementAPI.Controllers
                         Quantity = i.Quantity,
                         UnitPrice = i.UnitPrice,
                         Amount = i.Amount,
-                        ItemOrder = i.ItemOrder
+                        ItemOrder = i.ItemOrder,
+                        KpdCode = i.KpdCode,
+                        TaxRate = i.TaxRate,
+                        TaxCategoryCode = i.TaxCategoryCode
                     }).ToList(),
                     ConsumptionData = updatedInvoice.ConsumptionData.Select(c => new UtilityConsumptionDataResponse
                     {
@@ -902,5 +895,355 @@ namespace InventoryManagementAPI.Controllers
                 });
             }
         }
+
+        /// <summary>
+        /// Add a new item to an existing utility invoice (only if not fiscalized)
+        /// </summary>
+        [HttpPost("{id}/items")]
+        public async Task<ActionResult<ApiResponse<UtilityInvoiceResponse>>> AddInvoiceItem(
+            int id,
+            [FromBody] AddUtilityInvoiceItemRequest request)
+        {
+            try
+            {
+                // Fetch the invoice with its items
+                var invoice = await _context.UtilityInvoices
+                    .Include(u => u.Items)
+                    .Include(u => u.ConsumptionData)
+                    .FirstOrDefaultAsync(u => u.Id == id);
+
+                if (invoice == null)
+                {
+                    return NotFound(new ApiResponse<UtilityInvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "Račun nije pronađen"
+                    });
+                }
+
+                // ✅ IMPORTANT: Prevent adding items to fiscalized invoices
+                if (invoice.FiscalizationStatus == "fiscalized")
+                {
+                    return BadRequest(new ApiResponse<UtilityInvoiceResponse>
+                    {
+                        Success = false,
+                        Message = "Ne možete dodavati stavke fiskaliziranom računu. Fiskalizirani računi su zaštićeni zakonom."
+                    });
+                }
+
+                // Determine the next item order
+                var maxOrder = invoice.Items.Any() 
+                    ? invoice.Items.Max(i => i.ItemOrder) 
+                    : 0;
+
+                // Create new item
+                var newItem = new UtilityInvoiceItem
+                {
+                    UtilityInvoiceId = invoice.Id,
+                    Description = request.Description,
+                    Unit = request.Unit,
+                    Quantity = request.Quantity,
+                    UnitPrice = request.UnitPrice,
+                    Amount = request.Amount,
+                    ItemOrder = maxOrder + 1,
+                    KpdCode = request.KpdCode ?? "35.30.11",
+                    TaxRate = request.TaxRate,
+                    TaxCategoryCode = request.TaxCategoryCode
+                };
+
+                // Add item to invoice
+                invoice.Items.Add(newItem);
+
+                // ✅ Optionally recalculate totals
+                if (request.RecalculateTotals)
+                {
+                    var newSubTotal = invoice.Items.Sum(i => i.Amount);
+                    var taxMultiplier = request.TaxRate / 100m;
+                    var newVatAmount = newSubTotal * taxMultiplier;
+                    var newTotalAmount = newSubTotal + newVatAmount;
+
+                    invoice.SubTotal = newSubTotal;
+                    invoice.VatAmount = newVatAmount;
+                    invoice.TotalAmount = newTotalAmount;
+
+                    _logger.LogInformation(
+                        "Recalculated invoice {InvoiceNumber} totals: SubTotal={SubTotal}, VAT={VAT}, Total={Total}",
+                        invoice.InvoiceNumber, newSubTotal, newVatAmount, newTotalAmount);
+                }
+
+                // Update timestamp
+                invoice.UpdatedAt = DateTime.UtcNow;
+
+                // Save changes
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Added new item to invoice {InvoiceNumber}: {Description}",
+                    invoice.InvoiceNumber, request.Description);
+
+                // Return updated invoice
+                var updatedInvoice = await _context.UtilityInvoices
+                    .Include(u => u.Items.OrderBy(i => i.ItemOrder))
+                    .Include(u => u.ConsumptionData.OrderBy(c => c.ParameterOrder))
+                    .FirstOrDefaultAsync(u => u.Id == id);
+
+                var response = new UtilityInvoiceResponse
+                {
+                    Id = updatedInvoice!.Id,
+                    Building = updatedInvoice.Building,
+                    Period = updatedInvoice.Period,
+                    InvoiceNumber = updatedInvoice.InvoiceNumber,
+                    Model = updatedInvoice.Model,
+                    IssueDate = updatedInvoice.IssueDate,
+                    DueDate = updatedInvoice.DueDate,
+                    ValidityDate = updatedInvoice.ValidityDate,
+                    BankAccount = updatedInvoice.BankAccount,
+                    CustomerCode = updatedInvoice.CustomerCode,
+                    CustomerName = updatedInvoice.CustomerName,
+                    CustomerAddress = updatedInvoice.CustomerAddress,
+                    PostalCode = updatedInvoice.PostalCode,
+                    City = updatedInvoice.City,
+                    CustomerOib = updatedInvoice.CustomerOib,
+                    ServiceTypeHot = updatedInvoice.ServiceTypeHot,
+                    ServiceTypeHeating = updatedInvoice.ServiceTypeHeating,
+                    SubTotal = updatedInvoice.SubTotal,
+                    VatAmount = updatedInvoice.VatAmount,
+                    TotalAmount = updatedInvoice.TotalAmount,
+                    DebtText = updatedInvoice.DebtText,
+                    ConsumptionText = updatedInvoice.ConsumptionText,
+                    FiscalizationStatus = updatedInvoice.FiscalizationStatus,
+                    FiscalizationMethod = updatedInvoice.FiscalizationMethod,
+                    FiscalizedAt = updatedInvoice.FiscalizedAt,
+                    FiscalizationError = updatedInvoice.FiscalizationError,
+                    CreatedAt = updatedInvoice.CreatedAt,
+                    UpdatedAt = updatedInvoice.UpdatedAt,
+                    Items = updatedInvoice.Items.Select(i => new UtilityInvoiceItemResponse
+                    {
+                        Id = i.Id,
+                        Description = i.Description,
+                        Unit = i.Unit,
+                        Quantity = i.Quantity,
+                        UnitPrice = i.UnitPrice,
+                        Amount = i.Amount,
+                        ItemOrder = i.ItemOrder,
+                        KpdCode = i.KpdCode,
+                        TaxRate = i.TaxRate,
+                        TaxCategoryCode = i.TaxCategoryCode
+                    }).ToList(),
+                    ConsumptionData = updatedInvoice.ConsumptionData.Select(c => new UtilityConsumptionDataResponse
+                    {
+                        Id = c.Id,
+                        ParameterName = c.ParameterName,
+                        ParameterValue = c.ParameterValue,
+                        ParameterOrder = c.ParameterOrder
+                    }).ToList()
+                };
+
+                return Ok(new ApiResponse<UtilityInvoiceResponse>
+                {
+                    Success = true,
+                    Message = $"Stavka '{request.Description}' uspješno dodana računu",
+                    Data = response
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding item to utility invoice {Id}", id);
+                return StatusCode(500, new ApiResponse<UtilityInvoiceResponse>
+                {
+                    Success = false,
+                    Message = "Došlo je do greške prilikom dodavanja stavke"
+                });
+            }
+        }
+
+        /// Export invoices to CSV with fiscalization details
+        /// GET /api/UtilityInvoices/export-csv
+        [HttpGet("export-csv")]
+        public async Task<IActionResult> ExportInvoicesToCsv(
+    [FromQuery] string? batchId = null,
+    [FromQuery] string? period = null,
+    [FromQuery] string? building = null,
+    [FromQuery] string? fiscalizationStatus = null,
+    [FromQuery] string? fiscalizationMethod = null,
+    [FromQuery] DateTime? dateFrom = null,
+    [FromQuery] DateTime? dateTo = null)
+        {
+            try
+            {
+                var query = _context.UtilityInvoices
+                    .Include(u => u.Items.OrderBy(i => i.ItemOrder))
+                    .Include(u => u.ConsumptionData.OrderBy(c => c.ParameterOrder))
+                    .AsQueryable();
+
+                // Apply filters
+                if (!string.IsNullOrEmpty(batchId))
+                    query = query.Where(u => u.ImportBatchId == batchId);
+                if (!string.IsNullOrEmpty(period))
+                    query = query.Where(u => u.Period == period);
+                if (!string.IsNullOrEmpty(building))
+                    query = query.Where(u => u.Building.Contains(building));
+                if (!string.IsNullOrEmpty(fiscalizationStatus))
+                    query = query.Where(u => u.FiscalizationStatus == fiscalizationStatus);
+                if (!string.IsNullOrEmpty(fiscalizationMethod))
+                    query = query.Where(u => u.FiscalizationMethod == fiscalizationMethod);
+                if (dateFrom.HasValue)
+                    query = query.Where(u => u.IssueDate >= dateFrom.Value);
+                if (dateTo.HasValue)
+                    query = query.Where(u => u.IssueDate <= dateTo.Value);
+
+                var invoices = await query.OrderBy(u => u.InvoiceNumber).ToListAsync();
+
+                if (!invoices.Any())
+                    return NotFound(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Nema računa za izvoz"
+                    });
+
+                var csv = GenerateCsvContent(invoices);
+                var fileName = $"FiskaliziraniRacuni_{DateTime.Now:dd.MM.yyyy}.csv";
+                var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+                var bom = System.Text.Encoding.UTF8.GetPreamble();
+                var csvWithBom = bom.Concat(bytes).ToArray();
+
+                _logger.LogInformation("Exported {Count} invoices to CSV", invoices.Count);
+                return File(csvWithBom, "text/csv", fileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error exporting invoices to CSV");
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "Došlo je do greške prilikom izvoza računa"
+                });
+            }
+        }
+
+        private string GenerateCsvContent(List<UtilityInvoice> invoices)
+        {
+            var sb = new System.Text.StringBuilder();
+
+            // CSV Header - Original format with fiscalization fields added at the end
+            sb.AppendLine(
+                "ZGRADA,RAZDOBLJE,BRRN,MODEL,KKSIFRA,KKIME,KKADR,KKPTT,KKGRAD,KKOIB," +
+                "DATISP,DATRN,DATVAL,RNIBAN,TIP_TV,TIP_GRI," +
+                "OPIS1,JED1,KOL1,CIJ1,IZN1," +
+                "OPIS2,JED2,KOL2,CIJ2,IZN2," +
+                "OPIS3,JED3,KOL3,CIJ3,IZN3," +
+                "OPIS4,JED4,KOL4,CIJ4,IZN4," +
+                "OPIS5,JED5,KOL5,CIJ5,IZN5," +
+                "UKUPNO_BEZ,PDV_1,REZ_1,SVEUKUP,DUG_TXT,POTROS_TXT," +
+                "TXT_TAB1,NUM_TAB1,TXT_TAB2,NUM_TAB2,TXT_TAB3,NUM_TAB3,TXT_TAB4,NUM_TAB4,TXT_TAB5,NUM_TAB5," +
+                "TXT_TAB6,NUM_TAB6,TXT_TAB7,NUM_TAB7,TXT_TAB8,NUM_TAB8,TXT_TAB9,NUM_TAB9,TXT_TAB10,NUM_TAB10," +
+                "JIR,ZKI,ElectronicId"
+            );
+
+            // CSV Data
+            foreach (var inv in invoices)
+            {
+                // Get up to 5 items (OPIS1-5, JED1-5, etc.)
+                var items = inv.Items.OrderBy(i => i.ItemOrder).Take(5).ToList();
+
+                // Get up to 10 consumption data parameters (TXT_TAB1-10, NUM_TAB1-10)
+                var consumptionData = inv.ConsumptionData.OrderBy(c => c.ParameterOrder).Take(10).ToList();
+
+                var formattedNumber = FormatInvoiceNumber(inv.InvoiceNumber);
+
+                sb.Append($"{EscapeCsvField(inv.Building)},"); // ZGRADA
+                sb.Append($"{EscapeCsvField(inv.Period)},"); // RAZDOBLJE
+                sb.Append($"{formattedNumber},"); // BRRN
+                sb.Append($"{EscapeCsvField(inv.Model)},"); // MODEL
+                sb.Append($"{EscapeCsvField(inv.CustomerCode)},"); // KKSIFRA
+                sb.Append($"{EscapeCsvField(inv.CustomerName)},"); // KKIME
+                sb.Append($"{EscapeCsvField(inv.CustomerAddress)},"); // KKADR
+                sb.Append($"{EscapeCsvField(inv.PostalCode)},"); // KKPTT
+                sb.Append($"{EscapeCsvField(inv.City)},"); // KKGRAD
+                sb.Append($"{EscapeCsvField(inv.CustomerOib)},"); // KKOIB
+                sb.Append($"{inv.IssueDate:dd.MM.yyyy},"); // DATISP
+                sb.Append($"{inv.DueDate:dd.MM.yyyy},"); // DATRN
+                sb.Append($"{(inv.ValidityDate.HasValue ? inv.ValidityDate.Value.ToString("dd.MM.yyyy") : "")},"); // DATVAL
+                sb.Append($"{EscapeCsvField(inv.BankAccount)},"); // RNIBAN
+                sb.Append($"{EscapeCsvField(inv.ServiceTypeHot)},"); // TIP_TV
+                sb.Append($"{EscapeCsvField(inv.ServiceTypeHeating)},"); // TIP_GRI
+
+                // Items (up to 5: OPIS1-5, JED1-5, KOL1-5, CIJ1-5, IZN1-5)
+                for (int i = 0; i < 5; i++)
+                {
+                    if (i < items.Count)
+                    {
+                        var item = items[i];
+                        sb.Append($"{EscapeCsvField(item.Description)},"); // OPIS
+                        sb.Append($"{EscapeCsvField(item.Unit)},"); // JED
+                        sb.Append($"{item.Quantity:F3},"); // KOL
+                        sb.Append($"{item.UnitPrice:F2},"); // CIJ
+                        sb.Append($"{item.Amount:F2}"); // IZN
+                    }
+                    else
+                    {
+                        // Empty fields for missing items
+                        sb.Append(",,0.000,0.00,0.00");
+                    }
+                    if (i < 4) sb.Append(","); // Add comma except after last item
+                }
+
+                sb.Append(","); // Separator before totals
+
+                // Financial totals
+                sb.Append($"{inv.SubTotal:F2},"); // UKUPNO_BEZ
+                sb.Append($"{inv.VatAmount:F2},"); // PDV_1
+                sb.Append($"0.00,"); // REZ_1 (reserved, always 0)
+                sb.Append($"{inv.TotalAmount:F2},"); // SVEUKUP
+                sb.Append($"{EscapeCsvField(inv.DebtText)},"); // DUG_TXT
+                sb.Append($"{EscapeCsvField(inv.ConsumptionText)},"); // POTROS_TXT
+
+                // Consumption data (up to 10: TXT_TAB1-10, NUM_TAB1-10)
+                for (int i = 0; i < 10; i++)
+                {
+                    if (i < consumptionData.Count)
+                    {
+                        var data = consumptionData[i];
+                        sb.Append($"{EscapeCsvField(data.ParameterName)},"); // TXT_TAB
+                        sb.Append($"{(data.ParameterValue.HasValue ? data.ParameterValue.Value.ToString("F3") : "0.000")}"); // NUM_TAB
+                    }
+                    else
+                    {
+                        // Empty fields for missing consumption data
+                        sb.Append(",0.000");
+                    }
+                    if (i < 9) sb.Append(","); // Add comma except after last parameter
+                }
+
+                sb.Append(","); // Separator before fiscalization fields
+
+                // ✅ FISCALIZATION FIELDS (3 columns only)
+                sb.Append($"{EscapeCsvField(inv.Jir ?? "")},"); // JIR (FINA only)
+                sb.Append($"{EscapeCsvField(inv.Zki ?? "")},"); // ZKI (FINA only)
+                sb.Append($"{EscapeCsvField(inv.MojeRacunInvoiceId ?? "")}"); // ElectronicId (mojE-Račun only)
+
+                sb.AppendLine();
+            }
+
+            return sb.ToString();
+        }
+
+        private string FormatInvoiceNumber(string invoiceNumber)
+        {
+            if (string.IsNullOrEmpty(invoiceNumber)) return "";
+            var parts = invoiceNumber.Split('-');
+            // Extract middle part and format as {serial}/1/3
+            return parts.Length >= 2 ? $"{parts[1].Trim()}/1/3" : $"{invoiceNumber}/1/3";
+        }
+
+        private string EscapeCsvField(string? field)
+        {
+            if (string.IsNullOrEmpty(field)) return "";
+            // If field contains comma, quote, or newline, wrap in quotes and escape quotes
+            if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
+                return $"\"{field.Replace("\"", "\"\"")}\"";
+            return field;
+        }
+
+
     }
 }

@@ -123,22 +123,10 @@ namespace InventoryManagementAPI.Models
         // ========================================
         
         /// <summary>
-        /// Invoice UUID from mojE-Račun system
+        /// mojE-Račun ElectronicId (invoice ID in mojE-Račun system)
         /// </summary>
-        [StringLength(100)]
+        [StringLength(50)]
         public string? MojeRacunInvoiceId { get; set; }
-
-        /// <summary>
-        /// QR code URL for mojE-Račun invoice
-        /// </summary>
-        [StringLength(500)]
-        public string? MojeRacunQrCodeUrl { get; set; }
-
-        /// <summary>
-        /// PDF download URL from mojE-Račun
-        /// </summary>
-        [StringLength(500)]
-        public string? MojeRacunPdfUrl { get; set; }
 
         /// <summary>
         /// When the invoice was submitted to mojE-Račun
@@ -146,7 +134,7 @@ namespace InventoryManagementAPI.Models
         public DateTime? MojeRacunSubmittedAt { get; set; }
 
         /// <summary>
-        /// mojE-Račun status: pending, accepted, rejected, delivered
+        /// mojE-Račun status: In preparation, In validation, Sent, Delivered, Canceled, Unsuccessful
         /// </summary>
         [StringLength(50)]
         public string? MojeRacunStatus { get; set; }

@@ -413,9 +413,7 @@ namespace InventoryManagementAPI.Services
         {
             try
             {
-                var type = isSoap ? "SOAP" : "SIGNED";
-
-                // Sanitiziraj invoice number - ukloni nedozvoljene karaktere za filename
+                // Sanitize invoice number for filesystem
                 var safeInvoiceNumber = invoiceNumber
                     .Replace("/", "_")
                     .Replace("\\", "_")
@@ -427,30 +425,73 @@ namespace InventoryManagementAPI.Services
                     .Replace(">", "_")
                     .Replace("|", "_");
 
-                var fileName = $"Fina_{type}_{safeInvoiceNumber}_{DateTime.Now:yyyyMMddHHmmssfff}.xml";
-
-                // Koristi ContentRootPath kao fallback ili kreiraj u projektu
+                // Create organized folder structure: FiscalizationDebug/FINA/{InvoiceNumber}/
                 var rootPath = _environment.WebRootPath ?? _environment.ContentRootPath ?? Directory.GetCurrentDirectory();
-                var debugFolder = Path.Combine(rootPath, "FiscalizationDebug");
+                var invoiceFolder = Path.Combine(rootPath, "FiscalizationDebug", "FINA", safeInvoiceNumber);
 
-                _logger.LogInformation("Attempting to save XML to: {DebugFolder}", debugFolder);
-
-                if (!Directory.Exists(debugFolder))
+                if (!Directory.Exists(invoiceFolder))
                 {
-                    Directory.CreateDirectory(debugFolder);
-                    _logger.LogInformation("Created debug folder: {DebugFolder}", debugFolder);
+                    Directory.CreateDirectory(invoiceFolder);
+                    _logger.LogInformation("Created FINA debug folder: {InvoiceFolder}", invoiceFolder);
                 }
 
-                var filePath = Path.Combine(debugFolder, fileName);
+                // Determine filename based on type
+                string fileName;
+                if (isSoap)
+                {
+                    fileName = "02-Request-SOAP-Envelope.xml";
+                }
+                else
+                {
+                    // Check if this is a response (contains "RESPONSE" in invoiceNumber from caller)
+                    if (safeInvoiceNumber.Contains("_RESPONSE_"))
+                    {
+                        // Extract status code from invoice number
+                        var parts = safeInvoiceNumber.Split(new[] { "_RESPONSE_" }, StringSplitOptions.None);
+                        var statusCode = parts.Length > 1 ? parts[1] : "Unknown";
+                        var originalInvoice = parts[0];
+                        
+                        // Redirect to correct invoice folder
+                        invoiceFolder = Path.Combine(rootPath, "FiscalizationDebug", "FINA", originalInvoice);
+                        if (!Directory.Exists(invoiceFolder))
+                            Directory.CreateDirectory(invoiceFolder);
+                        
+                        fileName = $"03-Response-{statusCode}.xml";
+                    }
+                    else
+                    {
+                        fileName = "01-Request-Signed.xml";
+                    }
+                }
+
+                var filePath = Path.Combine(invoiceFolder, fileName);
                 File.WriteAllText(filePath, xmlContent, Encoding.UTF8);
 
-                _logger.LogInformation("[DEBUG] {Type} XML for invoice {InvoiceNumber} saved: {FilePath}",
-                    type, safeInvoiceNumber, filePath);
+                // Save metadata file with timestamp and details
+                var metadataPath = Path.Combine(invoiceFolder, "metadata.json");
+                var metadata = new
+                {
+                    InvoiceNumber = invoiceNumber,
+                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Type = "FINA Fiscalization",
+                    Files = new[]
+                    {
+                        new { Order = 1, File = "01-Request-Signed.xml", Description = "Signed XML request (before SOAP envelope)" },
+                        new { Order = 2, File = "02-Request-SOAP-Envelope.xml", Description = "Complete SOAP envelope sent to FINA" },
+                        new { Order = 3, File = "03-Response-{StatusCode}.xml", Description = "Response from FINA server" }
+                    }
+                };
+                
+                File.WriteAllText(metadataPath, 
+                    System.Text.Json.JsonSerializer.Serialize(metadata, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), 
+                    Encoding.UTF8);
+
+                _logger.LogInformation("✅ FINA Debug XML saved: {InvoiceNumber}/{FileName}", safeInvoiceNumber, fileName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to save debug XML for invoice {InvoiceNumber}. Folder: {WebRootPath}",
-                    invoiceNumber, _environment.WebRootPath ?? "NULL");
+                _logger.LogError(ex, "Failed to save FINA debug XML for invoice {InvoiceNumber}",
+                    invoiceNumber);
             }
         }
 

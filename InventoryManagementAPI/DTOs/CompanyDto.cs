@@ -50,6 +50,60 @@ namespace InventoryManagementAPI.DTOs
         public string? Description { get; set; }
     }
 
+    public class UpdateCompanyProfileRequest
+    {
+        [StringLength(200)]
+        public string? CompanyName { get; set; }
+
+        [StringLength(500)]
+        public string? Address { get; set; }
+
+        [StringLength(50)]
+        public string? Oib { get; set; }
+
+        [StringLength(100)]
+        public string? Email { get; set; }
+
+        [StringLength(50)]
+        public string? Phone { get; set; }
+
+        [StringLength(100)]
+        public string? BankAccount { get; set; }
+
+        [StringLength(200)]
+        public string? Website { get; set; }
+
+        [StringLength(50)]
+        public string? InvoiceParam1 { get; set; }
+
+        [StringLength(50)]
+        public string? InvoiceParam2 { get; set; }
+
+        [StringLength(50)]
+        public string? OfferParam1 { get; set; }
+
+        [StringLength(50)]
+        public string? OfferParam2 { get; set; }
+
+        public decimal? DefaultTaxRate { get; set; }
+        public bool? FiscalizationEnabled { get; set; }
+        public bool? InPDV { get; set; }
+        public bool? AutoFiscalize { get; set; }
+        public string? LogoUrl { get; set; }
+        public string? Description { get; set; }
+        
+        // FINA Configuration
+        public string? FiscalizationOib { get; set; }
+        public string? FiscalizationOperatorOib { get; set; }
+        
+        // mojE-Račun Configuration
+        public bool? MojeRacunEnabled { get; set; }
+        public string? MojeRacunEnvironment { get; set; }
+        public string? MojeRacunClientId { get; set; }
+        public string? MojeRacunClientSecret { get; set; }
+        public string? MojeRacunApiKey { get; set; }
+    }
+
     public class CompanyProfileResponse
     {
         public int Id { get; set; }
@@ -70,12 +124,20 @@ namespace InventoryManagementAPI.DTOs
         public int LastOfferNumber { get; set; }
         public decimal DefaultTaxRate { get; set; }
         public bool InPDV { get; set; }
-        // Fiskalizacija
+        
+        // FINA Fiscalization
         public bool FiscalizationEnabled { get; set; }
-        public bool HasCertificate { get; set; } // Ne vraćaj path i password!
+        public bool HasCertificate { get; set; }
         public string? FiscalizationOib { get; set; }
         public bool AutoFiscalize { get; set; }
         public string? FiscalizationOperatorOib { get; set; }
+        
+        // mojE-Račun Configuration
+        public bool MojeRacunEnabled { get; set; }
+        public string? MojeRacunEnvironment { get; set; }
+        public string? MojeRacunClientId { get; set; }
+        // Do NOT return MojeRacunClientSecret or MojeRacunApiKey for security
+        public bool HasMojeRacunCredentials { get; set; }
     }
 
     public class UpdateFiscalizationSettingsRequest
@@ -94,5 +156,16 @@ namespace InventoryManagementAPI.DTOs
         [Required]
         [StringLength(100)]
         public string Password { get; set; } = string.Empty;
+    }
+    
+    // FINA Fiscalization Response (for old Invoice model)
+    public class FiscalizationResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string? Jir { get; set; }
+        public string? Zki { get; set; }
+        public DateTime? FiscalizedAt { get; set; }
+        public string? RawResponse { get; set; }
     }
 }

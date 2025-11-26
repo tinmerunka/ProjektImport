@@ -202,8 +202,6 @@ namespace InventoryManagementAPI.Controllers
                     utilityInvoice.FiscalizationStatus = "fiscalized";
                     utilityInvoice.FiscalizationMethod = "moje-racun";
                     utilityInvoice.MojeRacunInvoiceId = result.InvoiceId;
-                    utilityInvoice.MojeRacunQrCodeUrl = result.QrCodeUrl;
-                    utilityInvoice.MojeRacunPdfUrl = result.PdfUrl;
                     utilityInvoice.MojeRacunStatus = result.Status;
                     utilityInvoice.MojeRacunSubmittedAt = result.SubmittedAt;
                     utilityInvoice.FiscalizedAt = DateTime.UtcNow;
@@ -230,8 +228,6 @@ namespace InventoryManagementAPI.Controllers
                         Method = "moje-racun",
                         FiscalizationStatus = utilityInvoice.FiscalizationStatus,
                         MojeRacunInvoiceId = utilityInvoice.MojeRacunInvoiceId,
-                        QrCodeUrl = utilityInvoice.MojeRacunQrCodeUrl,
-                        PdfUrl = utilityInvoice.MojeRacunPdfUrl,
                         Status = utilityInvoice.MojeRacunStatus,
                         SubmittedAt = utilityInvoice.MojeRacunSubmittedAt
                     }
@@ -387,6 +383,209 @@ namespace InventoryManagementAPI.Controllers
                 {
                     Success = false,
                     Message = $"Connection test failed: {ex.Message}"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Query mojE-Račun outbox to check invoice statuses
+        /// Returns list of sent invoices with their current status
+        /// </summary>
+        [HttpPost("query-outbox")]
+        public async Task<ActionResult<ApiResponse<object>>> QueryMojeRacunOutbox(
+            [FromBody] OutboxQueryRequest? request = null)
+        {
+            try
+            {
+                var company = await GetCompanyForFiscalization(request?.CompanyId, fiscalizationType: "moje-racun");
+                
+                if (company == null)
+                {
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Nije pronađen profil tvrtke s omogućenim mojE-Račun sustavom"
+                    });
+                }
+
+                // Build filter
+                var filter = new OutboxQueryFilter();
+                
+                if (request?.ElectronicId.HasValue == true)
+                    filter.ElectronicId = request.ElectronicId.Value;
+                    
+                if (request?.StatusId.HasValue == true)
+                    filter.StatusId = request.StatusId.Value;
+                    
+                if (request?.InvoiceYear.HasValue == true)
+                    filter.InvoiceYear = request.InvoiceYear.Value;
+                    
+                if (!string.IsNullOrEmpty(request?.InvoiceNumber))
+                    filter.InvoiceNumber = request.InvoiceNumber;
+                    
+                if (request?.From.HasValue == true)
+                    filter.From = request.From.Value;
+                    
+                if (request?.To.HasValue == true)
+                    filter.To = request.To.Value;
+
+                // Query outbox
+                var headers = await _mojeRacunService.QueryOutboxAsync(company, filter);
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = true,
+                    Message = $"Retrieved {headers.Count} invoice(s) from outbox",
+                    Data = new
+                    {
+                        CompanyId = company.Id,
+                        CompanyName = company.CompanyName,
+                        Environment = company.MojeRacunEnvironment,
+                        TotalResults = headers.Count,
+                        Invoices = headers.Select(h => new
+                        {
+                            h.ElectronicId,
+                            h.DocumentNr,
+                            h.StatusId,
+                            h.StatusName,
+                            h.RecipientBusinessName,
+                            h.RecipientBusinessNumber,
+                            h.Created,
+                            h.Updated,
+                            h.Sent,
+                            h.Delivered
+                        }).ToList(),
+                        StatusLegend = new
+                        {
+                            _10 = "In preparation (U pripremi) - Document uploaded, pending validation",
+                            _20 = "In validation (U validaciji) - Validating recipient company data",
+                            _30 = "Sent (Poslan) - Signed, timestamped, email sent to customer",
+                            _40 = "Delivered (Dostavljen) - Customer accepted and downloaded",
+                            _45 = "Canceled (Otkazan) - Sender canceled, customer can't download",
+                            _50 = "Unsuccessful (Neuspješan) - Customer didn't download in 5 days"
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error querying mojE-Račun outbox");
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = $"Query failed: {ex.Message}"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Update invoice statuses by querying mojE-Račun outbox
+        /// Automatically updates local database with latest statuses from mojE-Račun
+        /// </summary>
+        [HttpPost("sync-statuses")]
+        public async Task<ActionResult<ApiResponse<object>>> SyncInvoiceStatuses(
+            [FromBody] FiscalizeUtilityWithCompanyRequest? request = null)
+        {
+            try
+            {
+                var company = await GetCompanyForFiscalization(request?.CompanyId, fiscalizationType: "moje-racun");
+                
+                if (company == null)
+                {
+                    return BadRequest(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Nije pronađen profil tvrtke s omogućenim mojE-Račun sustavom"
+                    });
+                }
+
+                // Get all fiscalized invoices via mojE-RaČun
+                var localInvoices = await _context.UtilityInvoices
+                    .Where(u => u.FiscalizationMethod == "moje-racun" && 
+                                u.FiscalizationStatus == "fiscalized" &&
+                                !string.IsNullOrEmpty(u.MojeRacunInvoiceId))
+                    .ToListAsync();
+
+                if (!localInvoices.Any())
+                {
+                    return Ok(new ApiResponse<object>
+                    {
+                        Success = true,
+                        Message = "No mojE-Račun invoices found to sync",
+                        Data = new { UpdatedCount = 0 }
+                    });
+                }
+
+                // Query outbox for recent invoices (last 30 days)
+                var filter = new OutboxQueryFilter
+                {
+                    From = DateTime.Now.AddDays(-30),
+                    To = DateTime.Now
+                };
+
+                var outboxHeaders = await _mojeRacunService.QueryOutboxAsync(company, filter);
+
+                int updatedCount = 0;
+                var updates = new List<object>();
+
+                foreach (var localInvoice in localInvoices)
+                {
+                    // Find matching invoice in outbox
+                    var outboxHeader = outboxHeaders.FirstOrDefault(h => 
+                        h.ElectronicId == localInvoice.MojeRacunInvoiceId);
+
+                    if (outboxHeader != null)
+                    {
+                        var oldStatus = localInvoice.MojeRacunStatus;
+                        var newStatus = outboxHeader.StatusName;
+
+                        // Update if status changed
+                        if (oldStatus != newStatus)
+                        {
+                            localInvoice.MojeRacunStatus = newStatus;
+                            localInvoice.UpdatedAt = DateTime.UtcNow;
+                            updatedCount++;
+
+                            updates.Add(new
+                            {
+                                InvoiceId = localInvoice.Id,
+                                InvoiceNumber = localInvoice.InvoiceNumber,
+                                ElectronicId = localInvoice.MojeRacunInvoiceId,
+                                OldStatus = oldStatus,
+                                NewStatus = newStatus,
+                                Delivered = outboxHeader.Delivered
+                            });
+
+                            _logger.LogInformation("Updated invoice {InvoiceNumber}: {OldStatus} → {NewStatus}",
+                                localInvoice.InvoiceNumber, oldStatus, newStatus);
+                        }
+                    }
+                }
+
+                if (updatedCount > 0)
+                {
+                    await _context.SaveChangesAsync();
+                }
+
+                return Ok(new ApiResponse<object>
+                {
+                    Success = true,
+                    Message = $"Sinkronizirano {localInvoices.Count} računa, {updatedCount} statusa ažurirano",
+                    Data = new
+                    {
+                        TotalInvoices = localInvoices.Count,
+                        UpdatedCount = updatedCount,
+                        Updates = updates
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error syncing invoice statuses");
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = $"Sync failed: {ex.Message}"
                 });
             }
         }

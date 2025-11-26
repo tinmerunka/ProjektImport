@@ -19,6 +19,8 @@ namespace InventoryManagementAPI.Services
         string GenerateUblXml(UtilityInvoice invoice, CompanyProfile company);
         Task<MojeRacunResponse> CheckInvoiceStatusAsync(string invoiceId, CompanyProfile company);
         Task<MojeRacunResponse> TestConnectionAsync(CompanyProfile company);
+        Task<string> DownloadInvoiceXmlAsync(long electronicId, CompanyProfile company); // NEW
+        Task<List<OutboxInvoiceHeader>> QueryOutboxAsync(CompanyProfile company, OutboxQueryFilter? filter = null);
     }
 
     public class MojeRacunService : IMojeRacunService
@@ -35,6 +37,8 @@ namespace InventoryManagementAPI.Services
         private const string PING_ENDPOINT = "/Ping";
         private const string SEND_ENDPOINT = "/send";  // FIXED: Changed from /OutgoingInvoices/Send
         private const string STATUS_ENDPOINT = "/OutgoingInvoices/Status";
+        private const string RECEIVE_ENDPOINT = "/receive";  // NEW
+
         // UBL 2.1 Namespaces
         private const string UBL_INVOICE_NS = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
         private const string UBL_CAC_NS = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2";
@@ -173,9 +177,7 @@ namespace InventoryManagementAPI.Services
                     InvoiceId = apiResponse.ElectronicId.ToString(),
                     Status = apiResponse.StatusName?.ToLower() ?? "sent",
                     SubmittedAt = apiResponse.Sent ?? DateTime.UtcNow,
-                    RawResponse = responseBody,
-                    QrCodeUrl = $"https://moj-eracun.hr/invoice/{apiResponse.ElectronicId}",
-                    PdfUrl = $"https://moj-eracun.hr/pdf/{apiResponse.ElectronicId}"
+                    RawResponse = responseBody
                 };
             }
             catch (Exception ex)
@@ -190,31 +192,60 @@ namespace InventoryManagementAPI.Services
                 };
             }
         }
-
+        
         private void SaveResponseForDebug(string invoiceNumber, string responseContent, int statusCode)
         {
             try
             {
+                // Sanitize invoice number for filesystem
                 var safeInvoiceNumber = invoiceNumber
                     .Replace("/", "_")
                     .Replace("\\", "_")
-                    .Replace(":", "_");
+                    .Replace(":", "_")
+                    .Replace("*", "_")
+                    .Replace("?", "_")
+                    .Replace("\"", "_")
+                    .Replace("<", "_")
+                    .Replace(">", "_")
+                    .Replace("|", "_");
 
-                var fileName = $"MojeRacun_Response_{safeInvoiceNumber}_{DateTime.Now:yyyyMMddHHmmssfff}_Status{statusCode}.json";
+                // Create organized folder structure: FiscalizationDebug/MojeRacun/{InvoiceNumber}/
                 var rootPath = _environment.WebRootPath ?? _environment.ContentRootPath ?? Directory.GetCurrentDirectory();
-                var debugFolder = Path.Combine(rootPath, "FiscalizationDebug");
+                var invoiceFolder = Path.Combine(rootPath, "FiscalizationDebug", "MojeRacun", safeInvoiceNumber);
 
-                if (!Directory.Exists(debugFolder))
-                    Directory.CreateDirectory(debugFolder);
+                if (!Directory.Exists(invoiceFolder))
+                {
+                    Directory.CreateDirectory(invoiceFolder);
+                    _logger.LogInformation("Created mojE-Račun debug folder: {InvoiceFolder}", invoiceFolder);
+                }
 
-                var filePath = Path.Combine(debugFolder, fileName);
+                var fileName = $"02-Response-{statusCode}.json";
+                var filePath = Path.Combine(invoiceFolder, fileName);
                 File.WriteAllText(filePath, responseContent, Encoding.UTF8);
 
-                _logger.LogInformation("[DEBUG] Response JSON saved: {FilePath}", filePath);
+                // Save metadata file with timestamp and details
+                var metadataPath = Path.Combine(invoiceFolder, "metadata.json");
+                var metadata = new
+                {
+                    InvoiceNumber = invoiceNumber,
+                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Type = "mojE-Račun Fiscalization",
+                    Files = new[]
+                    {
+                        new { Order = 1, File = "01-Request-UBL.xml", Description = "UBL 2.1 XML invoice sent to mojE-Račun" },
+                        new { Order = 2, File = "02-Response-{StatusCode}.json", Description = "JSON response from mojE-Račun API" }
+                    }
+                };
+                
+                File.WriteAllText(metadataPath, 
+                    System.Text.Json.JsonSerializer.Serialize(metadata, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), 
+                    Encoding.UTF8);
+
+                _logger.LogInformation("✅ mojE-Račun Response saved: {InvoiceNumber}/{FileName}", safeInvoiceNumber, fileName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to save debug response");
+                _logger.LogError(ex, "Failed to save mojE-Račun debug response");
             }
         }
 
@@ -378,11 +409,40 @@ namespace InventoryManagementAPI.Services
             sb.AppendLine("  <cac:AccountingCustomerParty>");
             sb.AppendLine("   <cac:Party>");
 
-            bool hasCustomerOib = !string.IsNullOrEmpty(invoice.CustomerOib) && invoice.CustomerOib.Length == 11;
+            bool hasCustomerOib = !string.IsNullOrEmpty(invoice.CustomerOib) &&
+                      invoice.CustomerOib.Length == 11 &&
+                      System.Text.RegularExpressions.Regex.IsMatch(invoice.CustomerOib, @"^\d{11}$");
 
-            // For testing: Use A1 Hrvatska's OIB if customer doesn't have one (A1 is registered in AMS)
-            string effectiveCustomerOib = hasCustomerOib ? invoice.CustomerOib : "29524210204"; // A1 Hrvatska d.o.o.
-            string effectiveCustomerName = hasCustomerOib ? invoice.CustomerName : "A1 HRVATSKA D.O.O.";
+            // ✅ PRODUCTION MODE: Require valid OIB, use test OIB only in development
+            string effectiveCustomerOib;
+            string effectiveCustomerName;
+
+            if (hasCustomerOib)
+            {
+                // Use real customer OIB from invoice
+                effectiveCustomerOib = invoice.CustomerOib!;
+                effectiveCustomerName = invoice.CustomerName;
+            }
+            else if (company.MojeRacunEnvironment == "test")
+            {
+                // TEST MODE ONLY: Use A1 Hrvatska for testing
+                _logger.LogWarning("⚠️ TEST MODE: Customer '{CustomerName}' has no valid OIB. Using A1 Hrvatska (OIB: 29524210204) for testing.",
+                    invoice.CustomerName);
+                effectiveCustomerOib = "29524210204"; // A1 Hrvatska d.o.o.
+                effectiveCustomerName = "A1 HRVATSKA D.O.O.";
+            }
+            else
+            {
+                // ❌ PRODUCTION: Reject invoice without valid customer OIB
+                var errorMessage =
+                    $"Kupac '{invoice.CustomerName}' (Račun: {invoice.InvoiceNumber}) nema valjan OIB od 11 znamenki. " +
+                    $"Svi kupci moraju imati valjan OIB za mojE-Račun fiskalizaciju u produkciji. " +
+                    $"Trenutno okruženje: {company.MojeRacunEnvironment ?? "nije postavljeno"}. " +
+                    $"Molimo ažurirajte OIB kupca prije slanja računa.";
+
+                _logger.LogError("PRODUCTION MODE: Rejecting invoice without customer OIB. {Error}", errorMessage);
+                throw new InvalidOperationException(errorMessage);
+            }
 
             // HR-BR-10: Buyer electronic address must be provided (cannot be empty)
             sb.AppendLine($"    <cbc:EndpointID schemeID=\"9934\">{effectiveCustomerOib}</cbc:EndpointID>");
@@ -537,9 +597,7 @@ namespace InventoryManagementAPI.Services
             return sb.ToString();
         }
 
-        /// <summary>
         /// Wraps UBL XML in OutgoingInvoicesData envelope as required by mojE-Račun API
-        /// </summary>
         private string WrapInOutgoingInvoicesData(string ublXml)
         {
             var sb = new StringBuilder();
@@ -599,6 +657,135 @@ namespace InventoryManagementAPI.Services
             }
         }
 
+        /// Query outbox to discover new statuses of sent documents
+        /// Returns up to 10,000 results
+        public async Task<List<OutboxInvoiceHeader>> QueryOutboxAsync(CompanyProfile company, OutboxQueryFilter? filter = null)
+        {
+            try
+            {
+                _logger.LogInformation("Querying mojE-Račun outbox for company {CompanyId}", company.Id);
+
+                var baseUrl = company.MojeRacunEnvironment == "production"
+                    ? MOJE_RACUN_PROD_BASE
+                    : MOJE_RACUN_TEST_BASE;
+
+                var queryUrl = $"{baseUrl}/queryOutbox";
+
+                // Build request payload
+                var requestPayload = new
+                {
+                    Username = company.MojeRacunClientId,
+                    Password = company.MojeRacunClientSecret,
+                    CompanyId = company.Oib,
+                    CompanyBu = string.Empty,
+                    SoftwareId = company.MojeRacunApiKey,
+                    ElectronicId = filter?.ElectronicId,
+                    StatusId = filter?.StatusId,
+                    InvoiceYear = filter?.InvoiceYear,
+                    InvoiceNumber = filter?.InvoiceNumber,
+                    From = filter?.From?.ToString("yyyy-MM-ddTHH:mm:ss"),
+                    To = filter?.To?.ToString("yyyy-MM-ddTHH:mm:ss")
+                };
+
+                var jsonContent = JsonSerializer.Serialize(requestPayload, new JsonSerializerOptions
+                {
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                });
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                _logger.LogInformation("Sending queryOutbox request to {Url}", queryUrl);
+
+                var response = await _httpClient.PostAsync(queryUrl, content);
+                var responseBody = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("queryOutbox failed: {StatusCode} - {Response}",
+                        response.StatusCode, responseBody);
+                    return new List<OutboxInvoiceHeader>();
+                }
+
+                // Parse XML response
+                var invoiceHeaders = ParseOutboxXmlResponse(responseBody);
+
+                _logger.LogInformation("Retrieved {Count} invoice headers from outbox", invoiceHeaders.Count);
+
+                return invoiceHeaders;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to query outbox");
+                return new List<OutboxInvoiceHeader>();
+            }
+        }
+
+        /// <summary>
+        /// Parse XML response from queryOutbox endpoint
+        /// </summary>
+        private List<OutboxInvoiceHeader> ParseOutboxXmlResponse(string xmlResponse)
+        {
+            var headers = new List<OutboxInvoiceHeader>();
+
+            try
+            {
+                var doc = new System.Xml.XmlDocument();
+                doc.LoadXml(xmlResponse);
+
+                var headerNodes = doc.SelectNodes("//InboxDocumentHeader");
+                
+                if (headerNodes == null || headerNodes.Count == 0)
+                {
+                    _logger.LogWarning("No InboxDocumentHeader nodes found in XML response");
+                    return headers;
+                }
+
+                foreach (System.Xml.XmlNode node in headerNodes)
+                {
+                    var header = new OutboxInvoiceHeader
+                    {
+                        ElectronicId = GetXmlNodeValue(node, "ElectronicId"),
+                        DocumentNr = GetXmlNodeValue(node, "DocumentNr"),
+                        DocumentTypeId = int.TryParse(GetXmlNodeValue(node, "DocumentTypeId"), out var typeId) ? typeId : 0,
+                        DocumentTypeName = GetXmlNodeValue(node, "DocumentTypeName"),
+                        StatusId = int.TryParse(GetXmlNodeValue(node, "StatusId"), out var statusId) ? statusId : 0,
+                        StatusName = GetXmlNodeValue(node, "StatusName"),
+                        RecipientBusinessNumber = GetXmlNodeValue(node, "RecipientBusinessNumber"),
+                        RecipientBusinessUnit = GetXmlNodeValue(node, "RecipientBusinessUnit"),
+                        RecipientBusinessName = GetXmlNodeValue(node, "RecipientBusinessName"),
+                        Created = ParseXmlDateTime(GetXmlNodeValue(node, "Created")),
+                        Updated = ParseXmlDateTime(GetXmlNodeValue(node, "Updated")),
+                        Sent = ParseXmlDateTime(GetXmlNodeValue(node, "Sent")),
+                        Delivered = ParseXmlDateTime(GetXmlNodeValue(node, "Delivered"))
+                    };
+
+                    headers.Add(header);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing outbox XML response");
+            }
+
+            return headers;
+        }
+
+        private string GetXmlNodeValue(System.Xml.XmlNode parentNode, string nodeName)
+        {
+            var node = parentNode.SelectSingleNode(nodeName);
+            return node?.InnerText ?? string.Empty;
+        }
+
+        private DateTime? ParseXmlDateTime(string dateTimeString)
+        {
+            if (string.IsNullOrWhiteSpace(dateTimeString))
+                return null;
+
+            if (DateTime.TryParse(dateTimeString, out var result))
+                return result;
+
+            return null;
+        }
+
         private string GetUnitCode(string unit)
         {
             return unit.ToLowerInvariant() switch
@@ -630,26 +817,102 @@ namespace InventoryManagementAPI.Services
         {
             try
             {
+                // Sanitize invoice number for filesystem
                 var safeInvoiceNumber = invoiceNumber
                     .Replace("/", "_")
                     .Replace("\\", "_")
-                    .Replace(":", "_");
+                    .Replace(":", "_")
+                    .Replace("*", "_")
+                    .Replace("?", "_")
+                    .Replace("\"", "_")
+                    .Replace("<", "_")
+                    .Replace(">", "_")
+                    .Replace("|", "_");
 
-                var fileName = $"MojeRacun_{type}_{safeInvoiceNumber}_{DateTime.Now:yyyyMMddHHmmssfff}.xml";
+                // Create organized folder structure: FiscalizationDebug/MojeRacun/{InvoiceNumber}/
                 var rootPath = _environment.WebRootPath ?? _environment.ContentRootPath ?? Directory.GetCurrentDirectory();
-                var debugFolder = Path.Combine(rootPath, "FiscalizationDebug");
+                var invoiceFolder = Path.Combine(rootPath, "FiscalizationDebug", "MojeRacun", safeInvoiceNumber);
 
-                if (!Directory.Exists(debugFolder))
-                    Directory.CreateDirectory(debugFolder);
+                if (!Directory.Exists(invoiceFolder))
+                {
+                    Directory.CreateDirectory(invoiceFolder);
+                    _logger.LogInformation("Created mojE-Račun debug folder: {InvoiceFolder}", invoiceFolder);
+                }
 
-                var filePath = Path.Combine(debugFolder, fileName);
+                var fileName = "01-Request-UBL.xml";
+                var filePath = Path.Combine(invoiceFolder, fileName);
                 File.WriteAllText(filePath, xmlContent, Encoding.UTF8);
 
-                _logger.LogInformation("[DEBUG] {Type} XML saved: {FilePath}", type, filePath);
+                // Save metadata file with timestamp and details
+                var metadataPath = Path.Combine(invoiceFolder, "metadata.json");
+                var metadata = new
+                {
+                    InvoiceNumber = invoiceNumber,
+                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Type = "mojE-Račun Fiscalization",
+                    Files = new[]
+                    {
+                        new { Order = 1, File = "01-Request-UBL.xml", Description = "UBL 2.1 XML invoice sent to mojE-Račun" },
+                        new { Order = 2, File = "02-Response-{StatusCode}.json", Description = "JSON response from mojE-Račun API" }
+                    }
+                };
+                
+                File.WriteAllText(metadataPath, 
+                    System.Text.Json.JsonSerializer.Serialize(metadata, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), 
+                    Encoding.UTF8);
+
+                _logger.LogInformation("✅ mojE-Račun UBL XML saved: {InvoiceNumber}/{FileName}", safeInvoiceNumber, fileName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to save debug XML");
+                _logger.LogError(ex, "Failed to save mojE-Račun debug XML");
+            }
+        }
+
+        public async Task<string> DownloadInvoiceXmlAsync(long electronicId, CompanyProfile company)
+        {
+            try
+            {
+                var baseUrl = company.MojeRacunEnvironment == "production"
+                    ? MOJE_RACUN_PROD_BASE
+                    : MOJE_RACUN_TEST_BASE;
+
+                var receiveUrl = $"{baseUrl}{RECEIVE_ENDPOINT}";
+
+                var requestPayload = new
+                {
+                    Username = company.MojeRacunClientId,
+                    Password = company.MojeRacunClientSecret,
+                    CompanyId = company.Oib,
+                    CompanyBu = string.Empty,
+                    SoftwareId = company.MojeRacunApiKey,
+                    ElectronicId = electronicId
+                };
+
+                var jsonContent = JsonSerializer.Serialize(requestPayload);
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                _logger.LogInformation("Downloading invoice XML for ElectronicId: {ElectronicId}", electronicId);
+
+                var response = await _httpClient.PostAsync(receiveUrl, content);
+                var xmlContent = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("Successfully downloaded invoice XML (ElectronicId: {ElectronicId})", electronicId);
+                    return xmlContent;
+                }
+                else
+                {
+                    _logger.LogError("Failed to download invoice XML: {StatusCode} - {Response}",
+                        response.StatusCode, xmlContent);
+                    throw new InvalidOperationException($"Failed to download invoice: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error downloading invoice XML for ElectronicId: {ElectronicId}", electronicId);
+                throw;
             }
         }
     }

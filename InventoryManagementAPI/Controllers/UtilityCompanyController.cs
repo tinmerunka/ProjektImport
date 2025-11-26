@@ -151,11 +151,11 @@ namespace InventoryManagementAPI.Controllers
                     Phone = request.Phone ?? string.Empty,
                     BankAccount = request.BankAccount ?? string.Empty,
                     Website = request.Website ?? string.Empty,
-                    InvoiceParam1 = request.InvoiceParam1,
-                    InvoiceParam2 = request.InvoiceParam2,
-                    OfferParam1 = request.OfferParam1,
-                    OfferParam2 = request.OfferParam2,
-                    DefaultTaxRate = request.DefaultTaxRate,
+                    InvoiceParam1 = request.InvoiceParam1 ?? string.Empty,
+                    InvoiceParam2 = request.InvoiceParam2 ?? string.Empty,
+                    OfferParam1 = request.OfferParam1 ?? string.Empty,
+                    OfferParam2 = request.OfferParam2 ?? string.Empty,
+                    DefaultTaxRate = request.DefaultTaxRate ?? 25.00m, // Default to 25% if not provided
                     UserId = 1 // For utility system, use a default user ID or get from JWT
                 };
 

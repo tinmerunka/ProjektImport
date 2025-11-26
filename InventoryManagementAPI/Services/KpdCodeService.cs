@@ -62,10 +62,8 @@ namespace InventoryManagementAPI.Services
             _logger = logger;
         }
 
-        /// <summary>
         /// Determines KPD code based on service description
         /// Uses keyword matching to identify the service type
-        /// </summary>
         public string GetKpdCodeForService(string description)
         {
             if (string.IsNullOrWhiteSpace(description))
@@ -91,10 +89,8 @@ namespace InventoryManagementAPI.Services
             return "35.30.11"; // Default: heating/hot water
         }
 
-        /// <summary>
         /// Gets UBL tax category code based on VAT rate
         /// Used in mojE-Raèun XML generation
-        /// </summary>
         public string GetTaxCategoryCode(decimal taxRate)
         {
             return taxRate switch
@@ -107,11 +103,9 @@ namespace InventoryManagementAPI.Services
             };
         }
 
-        /// <summary>
-        /// Gets default tax rate based on service description
+        /// Gets default tax rate based on sevice description
         /// Uses the same keyword matching as KPD code determination
         /// ? UPDATED: Default changed to 5% for utility services
-        /// </summary>
         public decimal GetDefaultTaxRateForService(string description)
         {
             if (string.IsNullOrWhiteSpace(description))
@@ -129,7 +123,7 @@ namespace InventoryManagementAPI.Services
                 }
             }
 
-            return 5.00m; // ? Changed from 13% to 5% - default for utilities
+            return 5.00m; // ? Changed from 13% to 5% - default for utilites
         }
     }
 }

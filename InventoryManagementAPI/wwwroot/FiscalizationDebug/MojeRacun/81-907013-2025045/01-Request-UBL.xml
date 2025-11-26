@@ -1,0 +1,178 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+ <Invoice xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2" xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2" xmlns:sac="urn:oasis:names:specification:ubl:schema:xsd:SignatureAggregateComponents-2" xmlns:ext="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2" xmlns:exthr="urn:invoice:hr:schema:xsd:CommonExtensionComponents-1" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2" xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+ <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:mfin.gov.hr:cius-2025:1.0#conformant#urn:mfin.gov.hr:ext-2025:1.0</cbc:CustomizationID>
+ <cbc:ProfileID>P3</cbc:ProfileID>
+ <cbc:ID>81-907013-2025045</cbc:ID>
+ <cbc:CopyIndicator>false</cbc:CopyIndicator>
+ <cbc:IssueDate>2025-11-18</cbc:IssueDate>
+ <cbc:IssueTime>10:16:28</cbc:IssueTime>
+ <cbc:DueDate>2025-11-19</cbc:DueDate>
+ <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode listID="ISO 4217 Alpha" listAgencyID="5" listSchemeURI="http://docs.oasis-open.org/ubl/os-UBL-2.1/cl/gc/default/CurrencyCode-2.1.gc">EUR</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty>
+   <cac:Party>
+    <cbc:EndpointID schemeID="9934">79830143058</cbc:EndpointID>
+    <cac:PartyIdentification>
+    <cbc:ID>9934:79830143058</cbc:ID>
+    </cac:PartyIdentification>
+    <cac:PartyName>
+    <cbc:Name>Toplana Koprivnica d.o.o.</cbc:Name>
+    </cac:PartyName>
+    <cac:PostalAddress>
+    <cbc:StreetName>Trg kralja Tomislava 1, 48000 Koprivnica</cbc:StreetName>
+    <cbc:CityName>Zagreb</cbc:CityName>
+    <cbc:PostalZone>10000</cbc:PostalZone>
+     <cac:AddressLine>
+     <cbc:Line>Trg kralja Tomislava 1, 48000 Koprivnica, Zagreb, 10000</cbc:Line>
+     </cac:AddressLine>
+     <cac:Country>
+     <cbc:IdentificationCode>HR</cbc:IdentificationCode>
+     </cac:Country>
+    </cac:PostalAddress>
+    <cac:PartyTaxScheme>
+    <cbc:CompanyID>HR79830143058</cbc:CompanyID>
+     <cac:TaxScheme>
+     <cbc:ID>VAT</cbc:ID>
+     </cac:TaxScheme>
+    </cac:PartyTaxScheme>
+    <cac:PartyLegalEntity>
+    <cbc:RegistrationName>Toplana Koprivnica d.o.o.</cbc:RegistrationName>
+    <cbc:CompanyID>79830143058</cbc:CompanyID>
+    </cac:PartyLegalEntity>
+   </cac:Party>
+   <cac:SellerContact>
+   <cbc:ID>79830143058</cbc:ID>
+   <cbc:Name>OPERATER</cbc:Name>
+   </cac:SellerContact>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+   <cac:Party>
+    <cbc:EndpointID schemeID="9934">70746643611</cbc:EndpointID>
+    <cac:PartyIdentification>
+    <cbc:ID>9934:70746643611</cbc:ID>
+    </cac:PartyIdentification>
+    <cac:PartyName>
+    <cbc:Name>Kolarek Tomislav 901712</cbc:Name>
+    </cac:PartyName>
+    <cac:PostalAddress>
+    <cbc:StreetName>VRTNI PUT 1</cbc:StreetName>
+    <cbc:CityName>Koprivnica</cbc:CityName>
+    <cbc:PostalZone>10000</cbc:PostalZone>
+     <cac:AddressLine>
+     <cbc:Line>VRTNI PUT 1, Koprivnica, 10000</cbc:Line>
+     </cac:AddressLine>
+     <cac:Country>
+     <cbc:IdentificationCode>HR</cbc:IdentificationCode>
+     </cac:Country>
+    </cac:PostalAddress>
+    <cac:PartyTaxScheme>
+    <cbc:CompanyID>HR70746643611</cbc:CompanyID>
+     <cac:TaxScheme>
+     <cbc:ID>VAT</cbc:ID>
+     </cac:TaxScheme>
+    </cac:PartyTaxScheme>
+    <cac:PartyLegalEntity>
+    <cbc:RegistrationName>Kolarek Tomislav 901712</cbc:RegistrationName>
+    <cbc:CompanyID>70746643611</cbc:CompanyID>
+    </cac:PartyLegalEntity>
+   </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:Delivery>
+  <cbc:ActualDeliveryDate>2025-11-18</cbc:ActualDeliveryDate>
+  </cac:Delivery>
+  <cac:PaymentMeans>
+  <cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>
+  <cbc:InstructionNote>Plaćanje po računu</cbc:InstructionNote>
+   <cac:PayeeFinancialAccount>
+   <cbc:ID>HR1623400091511214642</cbc:ID>
+   </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>
+  <cac:TaxTotal>
+   <cbc:TaxAmount currencyID="EUR">1.65</cbc:TaxAmount>
+   <cac:TaxSubtotal>
+    <cbc:TaxableAmount currencyID="EUR">32.89</cbc:TaxableAmount>
+    <cbc:TaxAmount currencyID="EUR">1.65</cbc:TaxAmount>
+    <cac:TaxCategory>
+    <cbc:ID>S</cbc:ID>
+    <cbc:Percent>5</cbc:Percent>
+     <cac:TaxScheme>
+     <cbc:ID>VAT</cbc:ID>
+     </cac:TaxScheme>
+    </cac:TaxCategory>
+   </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+   <cbc:LineExtensionAmount currencyID="EUR">32.89</cbc:LineExtensionAmount>
+   <cbc:TaxExclusiveAmount currencyID="EUR">32.89</cbc:TaxExclusiveAmount>
+   <cbc:TaxInclusiveAmount currencyID="EUR">34.54</cbc:TaxInclusiveAmount>
+   <cbc:AllowanceTotalAmount currencyID="EUR">0.00</cbc:AllowanceTotalAmount>
+   <cbc:ChargeTotalAmount currencyID="EUR">0.00</cbc:ChargeTotalAmount>
+   <cbc:PayableAmount currencyID="EUR">34.54</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+  <cbc:ID>1</cbc:ID>
+   <cbc:InvoicedQuantity unitCode="KWH">153.940</cbc:InvoicedQuantity>
+   <cbc:LineExtensionAmount currencyID="EUR">7.39</cbc:LineExtensionAmount>
+   <cac:Item>
+   <cbc:Name>Energija za proizvodnju - topla voda</cbc:Name>
+    <cac:CommodityClassification>
+     <cbc:ItemClassificationCode listID="CG">35.30.11</cbc:ItemClassificationCode>
+    </cac:CommodityClassification>
+    <cac:ClassifiedTaxCategory>
+    <cbc:ID>S</cbc:ID>
+    <cbc:Percent>5.00</cbc:Percent>
+     <cac:TaxScheme>
+     <cbc:ID>VAT</cbc:ID>
+     </cac:TaxScheme>
+    </cac:ClassifiedTaxCategory>
+   </cac:Item>
+   <cac:Price>
+    <cbc:PriceAmount currencyID="EUR">0.05</cbc:PriceAmount>
+    <cbc:BaseQuantity unitCode="KWH">153.940</cbc:BaseQuantity>
+   </cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+  <cbc:ID>2</cbc:ID>
+   <cbc:InvoicedQuantity unitCode="KWH">436.550</cbc:InvoicedQuantity>
+   <cbc:LineExtensionAmount currencyID="EUR">20.95</cbc:LineExtensionAmount>
+   <cac:Item>
+   <cbc:Name>Energija za proizvodnju - grijanje</cbc:Name>
+    <cac:CommodityClassification>
+     <cbc:ItemClassificationCode listID="CG">35.30.11</cbc:ItemClassificationCode>
+    </cac:CommodityClassification>
+    <cac:ClassifiedTaxCategory>
+    <cbc:ID>S</cbc:ID>
+    <cbc:Percent>5.00</cbc:Percent>
+     <cac:TaxScheme>
+     <cbc:ID>VAT</cbc:ID>
+     </cac:TaxScheme>
+    </cac:ClassifiedTaxCategory>
+   </cac:Item>
+   <cac:Price>
+    <cbc:PriceAmount currencyID="EUR">0.05</cbc:PriceAmount>
+    <cbc:BaseQuantity unitCode="KWH">436.550</cbc:BaseQuantity>
+   </cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+  <cbc:ID>3</cbc:ID>
+   <cbc:InvoicedQuantity unitCode="EA">35.020</cbc:InvoicedQuantity>
+   <cbc:LineExtensionAmount currencyID="EUR">4.55</cbc:LineExtensionAmount>
+   <cac:Item>
+   <cbc:Name>Naknada za djelatnost kupca toplinske energije</cbc:Name>
+    <cac:CommodityClassification>
+     <cbc:ItemClassificationCode listID="CG">35.21.10</cbc:ItemClassificationCode>
+    </cac:CommodityClassification>
+    <cac:ClassifiedTaxCategory>
+    <cbc:ID>S</cbc:ID>
+    <cbc:Percent>5.00</cbc:Percent>
+     <cac:TaxScheme>
+     <cbc:ID>VAT</cbc:ID>
+     </cac:TaxScheme>
+    </cac:ClassifiedTaxCategory>
+   </cac:Item>
+   <cac:Price>
+    <cbc:PriceAmount currencyID="EUR">0.13</cbc:PriceAmount>
+    <cbc:BaseQuantity unitCode="EA">35.020</cbc:BaseQuantity>
+   </cac:Price>
+  </cac:InvoiceLine>
+ </Invoice>

@@ -1,0 +1,22 @@
+﻿{
+  "InvoiceNumber": "81-907028-2025040_RESPONSE_OK",
+  "Timestamp": "2025-11-26 10:13:16",
+  "Type": "FINA Fiscalization",
+  "Files": [
+    {
+      "Order": 1,
+      "File": "01-Request-Signed.xml",
+      "Description": "Signed XML request (before SOAP envelope)"
+    },
+    {
+      "Order": 2,
+      "File": "02-Request-SOAP-Envelope.xml",
+      "Description": "Complete SOAP envelope sent to FINA"
+    },
+    {
+      "Order": 3,
+      "File": "03-Response-{StatusCode}.xml",
+      "Description": "Response from FINA server"
+    }
+  ]
+}

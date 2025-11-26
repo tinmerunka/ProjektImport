@@ -1,0 +1,17 @@
+﻿{
+  "InvoiceNumber": "81-907030-2025040",
+  "Timestamp": "2025-11-26 10:12:42",
+  "Type": "mojE-Ra\u010Dun Fiscalization",
+  "Files": [
+    {
+      "Order": 1,
+      "File": "01-Request-UBL.xml",
+      "Description": "UBL 2.1 XML invoice sent to mojE-Ra\u010Dun"
+    },
+    {
+      "Order": 2,
+      "File": "02-Response-{StatusCode}.json",
+      "Description": "JSON response from mojE-Ra\u010Dun API"
+    }
+  ]
+}

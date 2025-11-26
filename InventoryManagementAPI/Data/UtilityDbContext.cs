@@ -68,23 +68,13 @@ namespace InventoryManagementAPI.Data
             // Disable cascade delete for shared tables to prevent conflicts
             // ========================================
 
-            // CompanyProfile relationships - NO CASCADE
+            // CompanyProfile relationships - minimal configuration
+            // NOTE: Products, Customers, and old Invoices models have been removed
+            // Only User relationship remains
             modelBuilder.Entity<CompanyProfile>(entity =>
             {
-                entity.HasMany(c => c.Products)
-                    .WithOne(p => p.Company)
-                    .HasForeignKey(p => p.CompanyId)
-                    .OnDelete(DeleteBehavior.Restrict);
-
-                entity.HasMany(c => c.Customers)
-                    .WithOne(cu => cu.Company)
-                    .HasForeignKey(cu => cu.CompanyId)
-                    .OnDelete(DeleteBehavior.Restrict);
-
-                entity.HasMany(c => c.Invoices)
-                    .WithOne(i => i.Company)
-                    .HasForeignKey(i => i.CompanyId)
-                    .OnDelete(DeleteBehavior.Restrict);
+                // CompanyProfile is kept for fiscalization settings only
+                // No navigation properties to old inventory models
             });
 
             // User relationships - NO CASCADE
@@ -97,23 +87,14 @@ namespace InventoryManagementAPI.Data
             });
 
             // ========================================
-            // Invoice relationships - NO CASCADE to prevent cycles
+            // Minimal Invoice configuration for FINA compatibility ONLY
             // ========================================
+            // NOTE: This is a minimal Invoice model used only for converting
+            // UtilityInvoice to FINA format. It does NOT have Customer relationship.
             modelBuilder.Entity<Invoice>(entity =>
             {
-                // Invoice -> Customer (NO CASCADE)
-                entity.HasOne(i => i.Customer)
-                    .WithMany(c => c.Invoices)
-                    .HasForeignKey(i => i.CustomerId)
-                    .OnDelete(DeleteBehavior.Restrict);
-
-                // Invoice -> Company (already configured above)
-
-                // Invoice -> InvoiceItems (CASCADE allowed here since it's single path)
-                entity.HasMany(i => i.Items)
-                    .WithOne(ii => ii.Invoice)
-                    .HasForeignKey(ii => ii.InvoiceId)
-                    .OnDelete(DeleteBehavior.Cascade);
+                // No relationships configured - this is a standalone model
+                // Used only for FINA fiscalization conversion
             });
         }
     }

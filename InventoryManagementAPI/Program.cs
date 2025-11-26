@@ -11,11 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 
-// Configure Entity Framework - KEEP EXISTING DATABASE
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-// Configure Entity Framework - NEW UTILITY DATABASE
+// Configure Entity Framework - UTILITY DATABASE (PRIMARY)
 builder.Services.AddDbContext<UtilityDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("UtilityBillingConnection")));
 
@@ -26,18 +22,14 @@ builder.Services.AddScoped<IJwtService, JwtService>();
 // FISCALIZATION SERVICES
 // ========================================
 
-// Register FINA 1.0 Fiscalization Service (CIS)
+// Register FINA 1.0 Fiscalization Service (CIS) - Legacy support
 builder.Services.AddScoped<IFiscalizationService, FiscalizationService>();
 
-// Register mojE-Raèun 2.0 Fiscalization Service (UBL)
+// Register mojE-Raèun 2.0 Fiscalization Service (UBL) - Primary method
 builder.Services.AddScoped<IMojeRacunService, MojeRacunService>();
 
 // Register KPD Code Service (for product classification)
 builder.Services.AddScoped<IKpdCodeService, KpdCodeService>();
-
-// Register QR Code Service
-builder.Services.AddScoped<IQRCodeService, QRCodeService>();
-
 
 // Configure CORS
 builder.Services.AddCors(options =>
@@ -72,7 +64,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Inventory & Utility Billing API", Version = "v1" });
+    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Utility Billing & Fiscalization API", Version = "v2.0" });
 
     // Add JWT Authentication to Swagger
     c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme

@@ -122,9 +122,5 @@ namespace InventoryManagementAPI.Models
         /// </summary>
         [StringLength(500)]
         public string? MojeRacunClientSecret { get; set; }
-
-        public ICollection<Product> Products { get; set; } = new List<Product>();
-        public ICollection<Customer> Customers { get; set; } = new List<Customer>();
-        public ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
     }
 }
